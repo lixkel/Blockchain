@@ -9,6 +9,7 @@ class Blockchain:
         self.conn = sqlite3.connect("blockchain.db")
         self.c = self.conn.cursor()
         self.mempool = []
+        self.target = "0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
         try:
             self.c.execute("SELECT * FROM blockhain")
         except:
@@ -37,8 +38,10 @@ class Blockchain:
         previous_block = c.fetchone()
         if block[8:72] !== previous_block[2][8:72]:
             return False
-        header_hash = self.hash(block[:216])
         block_target = int(header[136:200], 16)
+        if block_target != self.target:
+            return False
+        header_hash = self.hash(block[:216])
         if not int(header_hash, 16) <= block_target:
             return False
         num_tx = int(block[216:218], 16)
