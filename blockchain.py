@@ -106,7 +106,7 @@ class Blockchain:
 
 
     def merkle_tree(self, hashes):
-        while len(hashes) >= 1:
+        while not len(hashes) >= 1:
             hashes1 = []
             for i in range(0, len(hashes), 2):
                 try:
@@ -157,7 +157,7 @@ class Blockchain:
         hashes = []
         for i in self.mempool:
               txs += i
-              hashes.appen(i[2:])
+              hashes.append(self.hash(i[2:]))
               if len(hashes) == 255:
                   break
         merkle_root = self.merkle_tree(hashes)
