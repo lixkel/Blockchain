@@ -42,6 +42,7 @@ def handle_message(soc, message):
             if blockchain.verify_tx(payload) == True:
                 if payload not in blockchain.mempool:
                     blockchain.mempool.append(payload)
+                    send_message("broadcast", soc=soc, cargo=payload)
                     msg = blockchain.tx_content(payload)
                     if msg:
                         print(msg)
@@ -70,7 +71,13 @@ def send_message(command, soc = None, cargo = None):
         blockchain.mempool.append(payload.hex())
         payload_lenght = hex(len(payload))[2:]
         header = create_header("transaction", payload_lenght)
-        outbound.put(["broadcast", header + payload])
+        outbound.put(["broadcast", [soc, header + payload]])
+    elif command == "broadcast":
+        payload = bytes.fromhex(cargo)
+        payload_lenght = hex(len(payload))[2:]
+        header = create_header("transaction", payload_lenght)
+        outbound.put(["broadcast", [soc, header + payload]])
+
 
 def create_header(command, payload_lenght):
     return fill(command.encode("utf-8").hex(), 24) + fill(payload_lenght, 8)
@@ -110,7 +117,7 @@ while True:
         b = int(input("zadaj cislo mena(0-n): "))
         c = input("zadaj spravu: ")
         cargo = [c, list(blockchain.pub_keys.keys())[b]]
-        send_message("send", cargo = cargo)
+        send_message("send", cargo=cargo)
     elif a == "import":
         b = input("zadaj kluc: ")
         c = input("zadaj meno: ")

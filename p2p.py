@@ -57,10 +57,11 @@ def main(nodes, inbound, outbound):
                 soc, message = body
                 send_message(soc, message)
             elif comm == "broadcast":
+                skip_soc, tx = body
                 for soc in sockets_list:
-                    if soc == server_socket:
+                    if soc == server_socket or soc == skip_soc:
                         continue
-                    send_message(soc, body)
+                    send_message(soc, tx)
             elif comm == "end":
                 for soc in sockets_list:
                     soc.close()
