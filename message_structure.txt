@@ -1,0 +1,10 @@
+Header:
+12 - command
+4 - lenght of payload
+
+
+Message types:
+
+Version:
+4 - version
+8 - timestamp
