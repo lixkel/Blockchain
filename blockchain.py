@@ -106,7 +106,7 @@ class Blockchain:
 
 
     def merkle_tree(self, hashes):
-        while not len(hashes) >= 1:
+        while len(hashes) > 1:
             hashes1 = []
             for i in range(0, len(hashes), 2):
                 try:
