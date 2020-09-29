@@ -5,6 +5,12 @@ Header:
 
 Message types:
 
-Version:
+version:
 4 - version
 8 - timestamp
+
+header:
+2 - number of headers
+32 - headers
+
+getblock:

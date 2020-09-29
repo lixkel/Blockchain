@@ -48,6 +48,15 @@ def handle_message(soc, message):
                         print(msg)
                 else:
                     pass
+    elif command == "header":
+        num_headers = int(payload[:4],16)
+        index = 4
+        for i in num_headers:
+            header_hash = payload[index:index+64]
+            blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash))
+            result = blockchain.c.fetchone()
+            if len(result) == 0:
+                send_message("getblock", cargo=header_hash)
 
 
 def send_message(command, soc = None, cargo = None):
@@ -74,10 +83,14 @@ def send_message(command, soc = None, cargo = None):
         outbound.put(["broadcast", [soc, header + payload]])
     elif command == "broadcast":
         payload, type = cargo
+        if type == "header":
+            payload = "0001" + payload
         payload = bytes.fromhex(payload)
         payload_lenght = hex(len(payload))[2:]
         header = create_header(type, payload_lenght)
         outbound.put(["broadcast", [soc, header + payload]])
+    elif command = "getblock":
+        
 
 
 def create_header(command, payload_lenght):
