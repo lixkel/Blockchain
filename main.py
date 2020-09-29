@@ -42,7 +42,7 @@ def handle_message(soc, message):
             if blockchain.verify_tx(payload) == True:
                 if payload not in blockchain.mempool:
                     blockchain.mempool.append(payload)
-                    send_message("broadcast", soc=soc, cargo=payload)
+                    send_message("broadcast", soc=soc, cargo=[payload, "transaction"])
                     msg = blockchain.tx_content(payload)
                     if msg:
                         print(msg)
@@ -73,9 +73,10 @@ def send_message(command, soc = None, cargo = None):
         header = create_header("transaction", payload_lenght)
         outbound.put(["broadcast", [soc, header + payload]])
     elif command == "broadcast":
-        payload = bytes.fromhex(cargo)
+        payload, type = cargo
+        payload = bytes.fromhex(payload)
         payload_lenght = hex(len(payload))[2:]
-        header = create_header("transaction", payload_lenght)
+        header = create_header(type, payload_lenght)
         outbound.put(["broadcast", [soc, header + payload]])
 
 
@@ -106,7 +107,14 @@ while True:
         soc, message = inbound.get()
         handle_message(soc, message)
     if not mined.empty():
-        print(mined.get())
+        new_block = mined.get()
+        new_block_hash = blockchain.hash(new_block[:216])
+        send_message("broadcast", cargo=[new_block_hash, "header"])
+        blockchain.c.execute("INSERT INTO blockchain VALUES (?,?);", (new_block_hash, new_block))
+        blockchain.conn.commit()
+        block_header, txs = blockchain.build_block()
+        to_mine.put([block_header, txs])
+
     a = input("zadaj daco: ")
     if a == "con":
         b = input("zadaj adresu: ")
@@ -145,6 +153,6 @@ while True:
         print(mining)
         outbound.put(["end", []])
         local_node.join()
-        if mining:
-            mining.terminate()
+        #if mining:
+            #mining.terminate()
         break

@@ -10,7 +10,7 @@ class Blockchain:
         self.c = self.conn.cursor()
         self.mempool = []
         self.pub_keys = {}
-        self.target = "0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        self.target = "00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
         try:
             self.c.execute("SELECT * FROM blockchain")
 
@@ -129,10 +129,10 @@ class Blockchain:
     def create_tx(self, msg, rec_key):
         global time
         if len(msg) <= 510:
-            tx_lenght = hex(len(msg))[2:]
-            if len(tx_lenght) % 2 == 1:
-                tx_lenght = "0" + tx_lenght
-            msg_size = bytes.fromhex(tx_lenght)
+            msg_size = hex(len(msg))[2:]
+            if len(msg_size) % 2 == 1:
+                msg_size = "0" + msg_size
+            msg_size = bytes.fromhex(msg_size)
             timestamp = hex(int(time()))[2:]
             tx = msg + timestamp + rec_key + self.ver_key_str
             tx = bytes.fromhex(tx)
@@ -150,16 +150,19 @@ class Blockchain:
     def build_block(self):
         global time
         if len(self.mempool) >= 255:
-            txs_lenght = hex(255)[2:]
+            txs_num = hex(255)[2:]
         else:
-            txs_lenght = hex(len(self.mempool))[:2]
-            txs = ""
+            txs_num = hex(len(self.mempool))[2:]
+        if len(txs_num) % 2 == 1:
+            txs_num = "0" + txs_num
+        txs = ""
         hashes = []
         for i in self.mempool:
               txs += i
               hashes.append(self.hash(i[2:]))
               if len(hashes) == 255:
                   break
+        txs = txs_num + txs
         merkle_root = self.merkle_tree(hashes)
         timestamp = hex(int(time()))[2:]
         self.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
