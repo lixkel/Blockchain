@@ -9,8 +9,13 @@ version:
 4 - version
 8 - timestamp
 
-header:
+headers:
 2 - number of headers
-32 - headers
+32x - headers
 
-getblock:
+getblocks:
+32 - starting hash
+32 - stopping hahsh
+
+block:
+variable - block

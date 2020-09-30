@@ -48,15 +48,32 @@ def handle_message(soc, message):
                         print(msg)
                 else:
                     pass
-    elif command == "header":
+    elif command == "headers":
         num_headers = int(payload[:4],16)
         index = 4
-        for i in num_headers:
+        #toto je docasne este presne neviem ako idem robit sync
+        for i in range(num_headers):
             header_hash = payload[index:index+64]
             blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash))
             result = blockchain.c.fetchone()
-            if len(result) == 0:
-                send_message("getblock", cargo=header_hash)
+            if len(result) == 0 and i % 127 == 0:
+                getblocks += header_hash
+                if i == 127:
+                    break
+        if len(getblocks) == 64:
+            getblocks += getblocks
+        send_message("getblocks", soc=soc, cargo=getblocks)
+    elif command == "getblocks":
+        if payload[:64] == payload[64:]:
+            header_hash = payload[:64]
+            blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash))
+            result = blockchain.c.fetchone()
+            block = result[1]
+            send_message("block", soc=soc, cargo=block)
+        else:
+            print("dojebana picovina")
+    elif command == "block":
+        print(payload)
 
 
 def send_message(command, soc = None, cargo = None):
@@ -83,14 +100,22 @@ def send_message(command, soc = None, cargo = None):
         outbound.put(["broadcast", [soc, header + payload]])
     elif command == "broadcast":
         payload, type = cargo
-        if type == "header":
+        if type == "headers":
             payload = "0001" + payload
         payload = bytes.fromhex(payload)
         payload_lenght = hex(len(payload))[2:]
         header = create_header(type, payload_lenght)
         outbound.put(["broadcast", [soc, header + payload]])
-    elif command = "getblock":
-        
+    elif command == "getblocks":
+        payload = bytes.fromhex(cargo)
+        payload_lenght = hex(len(payload))[2:]
+        header = create_header("getblocks", payload_lenght)
+        outbound.put(["send", [soc, header + payload]])
+    elif command == "block":
+        payload = bytes.fromhex(cargo)
+        payload_lenght = hex(len(payload))[2:]
+        header = create_header("block", payload_lenght)
+        outbound.put(["send", [soc, header + payload]])
 
 
 def create_header(command, payload_lenght):
@@ -122,7 +147,7 @@ while True:
     if not mined.empty():
         new_block = mined.get()
         new_block_hash = blockchain.hash(new_block[:216])
-        send_message("broadcast", cargo=[new_block_hash, "header"])
+        send_message("broadcast", cargo=[new_block_hash, "headers"])
         blockchain.c.execute("INSERT INTO blockchain VALUES (?,?);", (new_block_hash, new_block))
         blockchain.conn.commit()
         block_header, txs = blockchain.build_block()
