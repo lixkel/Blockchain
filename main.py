@@ -8,6 +8,7 @@ from multiprocessing import Queue, Process
 from ecdsa import SigningKey, VerifyingKey, SECP256k1
 
 import p2p
+from cli import cli
 from node import node
 from proof_of_work import mine
 from blockchain import Blockchain
@@ -45,7 +46,7 @@ def handle_message(soc, message):
                     send_message("broadcast", soc=soc, cargo=[payload, "transaction"])
                     msg = blockchain.tx_content(payload)
                     if msg:
-                        print(msg)
+                        prnt.put(msg)
                 else:
                     pass
     elif command == "headers":
@@ -54,9 +55,10 @@ def handle_message(soc, message):
         #toto je docasne este presne neviem ako idem robit sync
         for i in range(num_headers):
             header_hash = payload[index:index+64]
-            blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash))
+            print(header_hash)
+            blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash,))
             result = blockchain.c.fetchone()
-            if len(result) == 0 and i % 127 == 0:
+            if result == None and i % 127 == 0:
                 getblocks += header_hash
                 if i == 127:
                     break
@@ -66,14 +68,15 @@ def handle_message(soc, message):
     elif command == "getblocks":
         if payload[:64] == payload[64:]:
             header_hash = payload[:64]
-            blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash))
+            print(header_hash)
+            blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash,))
             result = blockchain.c.fetchone()
             block = result[1]
             send_message("block", soc=soc, cargo=block)
         else:
-            print("dojebana picovina")
+            prnt.put("dojebana picovina")
     elif command == "block":
-        print(payload)
+        prnt.put(payload)
 
 
 def send_message(command, soc = None, cargo = None):
@@ -137,8 +140,13 @@ inbound = Queue()
 outbound = Queue()
 to_mine = Queue()
 mined = Queue()
+com = Queue()
+prnt = Queue()
+display = Queue()
 local_node = threading.Thread(target=p2p.start_node, args=(nodes, inbound, outbound))
 local_node.start()
+tcli = threading.Thread(target=cli, args=(com, display, prnt))
+tcli.start()
 
 while True:
     if not inbound.empty():
@@ -152,45 +160,39 @@ while True:
         blockchain.conn.commit()
         block_header, txs = blockchain.build_block()
         to_mine.put([block_header, txs])
-
-    a = input("zadaj daco: ")
-    if a == "con":
-        b = input("zadaj adresu: ")
-        outbound.put(["connect", [b, send_message("version1")]])
-    elif a == "send":
-        for i in list(blockchain.pub_keys.values()):
-            print(i)
-        b = int(input("zadaj cislo mena(0-n): "))
-        c = input("zadaj spravu: ")
-        cargo = [c, list(blockchain.pub_keys.keys())[b]]
-        send_message("send", cargo=cargo)
-    elif a == "import":
-        b = input("zadaj kluc: ")
-        c = input("zadaj meno: ")
-        blockchain.save_key(b, c)
-    elif a == "export":
-        print(blockchain.ver_key_str)
-    elif a == "lsimported":
-        for i in blockchain.pub_keys:
-            print(f"{blockchain.pub_keys[i]}: {i}")
-    elif a == "lsnodes":
-        for i in nodes.values():
-            print(f"{i.address}: {i.authorized}")
-    elif a == "start mining":
-        block_header, txs = blockchain.build_block()
-        to_mine.put([block_header, txs])
-        mining = threading.Thread(target=mine, args=(mined, to_mine))
-        mining.start()
-    elif a == "stop mining":
-        if mining:
-            mining.terminate()
-            mining = None
-    elif a == "help":
-        print("\ncon\nsend\nimport\nexport\nlsimported\nlsnodes\nstart mining\nstop mining\nend\n")
-    elif a == "end":
-        print(mining)
-        outbound.put(["end", []])
-        local_node.join()
-        #if mining:
-            #mining.terminate()
-        break
+    if not com.empty():
+        a, b = com.get()
+        if a == "con":
+            outbound.put(["connect", [b, send_message("version1")]])
+        elif a == "send":
+            b,c = b
+            if b == "":
+                display.put(list(blockchain.pub_keys.values()))
+            else:
+                cargo = [c, list(blockchain.pub_keys.keys())[b]]
+                send_message("send", cargo=cargo)
+        elif a == "import":
+            b, c = b
+            blockchain.save_key(b, c)
+        elif a == "export":
+            display.put(blockchain.ver_key_str)
+        elif a == "lsimported":
+            display.put(blockchain.pub_keys)
+        elif a == "lsnodes":
+            display.put(list(nodes.values()))
+        elif a == "start mining":
+            block_header, txs = blockchain.build_block()
+            to_mine.put([block_header, txs])
+            mining = threading.Thread(target=mine, args=(mined, to_mine))
+            mining.start()
+        elif a == "stop mining":
+            if mining:
+                mining.terminate()
+                mining = None
+        elif a == "end":
+            #print(mining)
+            outbound.put(["end", []])
+            local_node.join()
+            #if mining:
+                #mining.terminate()
+            break
