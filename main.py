@@ -55,9 +55,9 @@ def handle_message(soc, message):
         #toto je docasne este presne neviem ako idem robit sync
         for i in range(num_headers):
             header_hash = payload[index:index+64]
-            print(header_hash)
             blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash,))
             result = blockchain.c.fetchone()
+            getblocks = ""
             if result == None and i % 127 == 0:
                 getblocks += header_hash
                 if i == 127:
@@ -68,7 +68,6 @@ def handle_message(soc, message):
     elif command == "getblocks":
         if payload[:64] == payload[64:]:
             header_hash = payload[:64]
-            print(header_hash)
             blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash,))
             result = blockchain.c.fetchone()
             block = result[1]
@@ -76,7 +75,7 @@ def handle_message(soc, message):
         else:
             prnt.put("dojebana picovina")
     elif command == "block":
-        prnt.put(payload)
+        print(payload)
 
 
 def send_message(command, soc = None, cargo = None):
@@ -154,6 +153,7 @@ while True:
         handle_message(soc, message)
     if not mined.empty():
         new_block = mined.get()
+        print(new_block)
         new_block_hash = blockchain.hash(new_block[:216])
         send_message("broadcast", cargo=[new_block_hash, "headers"])
         blockchain.c.execute("INSERT INTO blockchain VALUES (?,?);", (new_block_hash, new_block))
