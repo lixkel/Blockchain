@@ -22,23 +22,23 @@ def main(nodes, inbound, outbound):
     global sockets_list
     while True:
         read_sockets, write, exception_sockets = select.select(sockets_list, sockets_list, sockets_list, 0)
-        for socket in read_sockets:
-            if socket == server_socket:
+        for soc in read_sockets:
+            if soc == server_socket:
                 new_soc = server_socket.accept()
                 new_node = node(new_soc, "inbound", "version")
                 sockets_list.append(new_node.socket)
                 nodes[new_node.address] = new_node
             else:
-                new_message = receive_message(socket)
+                new_message = receive_message(soc)
                 if not new_message:
-                    sockets_list.remove(socket)
-                    del nodes[socket.getpeername()]
+                    sockets_list.remove(soc)
+                    del nodes[soc.getpeername()]
                 else:
-                    inbound.put([socket, new_message])
+                    inbound.put([soc, new_message])
 
-        for expection in exception_sockets:
+        for exception in exception_sockets:
             sockets_list.remove(expection)
-            del nodes[expection]
+            del nodes[exception]
 
         if not outbound.empty():
             comm, body = outbound.get()
