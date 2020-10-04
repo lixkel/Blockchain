@@ -41,12 +41,10 @@ def handle_message(soc, message):
     elif command == "transaction":
         if nodes[soc.getpeername()].authorized == True:
             if blockchain.verify_tx(payload) == True:
+                #mal by som to spreavit tak aby sa checkovalo len raz ci je tx v mempool
                 if payload not in blockchain.mempool:
                     blockchain.mempool.append(payload)
                     send_message("broadcast", soc=soc, cargo=[payload, "transaction"])
-                    msg = blockchain.tx_content(payload)
-                    if msg:
-                        prnt.put(msg)
                 else:
                     pass
     elif command == "headers":
@@ -133,7 +131,6 @@ def fill(entity, fill):
 
 
 version = "00000001"
-blockchain = Blockchain(version)
 nodes = {}
 inbound = Queue()
 outbound = Queue()
@@ -142,6 +139,7 @@ mined = Queue()
 com = Queue()
 prnt = Queue()
 display = Queue()
+blockchain = Blockchain(version,prnt)
 local_node = threading.Thread(target=p2p.start_node, args=(nodes, inbound, outbound))
 local_node.start()
 tcli = threading.Thread(target=cli, args=(com, display, prnt))

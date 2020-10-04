@@ -1,11 +1,12 @@
 class Blockchain:
-    def __init__(self, version):
+    def __init__(self, version, prnt):
         import sqlite3
         from time import time
         from hashlib import sha256
         from ecdsa import SigningKey, VerifyingKey, SECP256k1
         global time, sha256, SigningKey, VerifyingKey, SECP256k1
         self.version = version
+        self.prnt = prnt
         self.conn = sqlite3.connect("blockchain.db")
         self.c = self.conn.cursor()
         self.mempool = []
@@ -67,10 +68,10 @@ class Blockchain:
             message_size = int(block[index:index+2], 16) * 2
             index += 2
             tx_size = index + message_size + tx_remaining
-            tx = block[index:tx_size]
+            tx = block[index+2:tx_size]
             if not self.verify_tx(tx):
                 return False
-            tx_hashes.append(self.hash(tx))
+            tx_hashes.append(self.hash(tx[2:]))
             index = index + tx_size
         merkle_root = self.merkle_tree(tx_hashes)
         if merkle_root != block[72:136]:
@@ -83,6 +84,10 @@ class Blockchain:
         sig = bytes.fromhex(tx[-128:])
         vk = VerifyingKey.from_string(bytes.fromhex(tx[-256:-128]), curve=SECP256k1)
         if vk.verify(sig, bytes.fromhex(tx[2:-128])):
+            if tx not in self.mempool:
+                if tx[-384:-256] == self.ver_key_str:
+                    msg_size = int(tx[:2], 16)
+                    self.prnt.put(bytes.fromhex(tx[2:msg_size+2]).decode("utf-8"))
             return True
         return False
 
