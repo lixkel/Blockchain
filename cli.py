@@ -43,6 +43,14 @@ def cli(com, display, prnt):
             com.put([a, ""])
         elif a == "stop mining":
             com.put([a, ""])
+        elif a == "sync":
+            com.put([a, ["", ""]])
+            while display.empty():
+                pass
+            for i in display.get():
+                print(f"{i.address}: {i.authorized}")
+            b = int(input("zadaj cislo mena(0-n): "))
+            com.put([a, b])
         elif a == "help":
             print("\ncon\nsend\nimport\nexport\nlsimported\nlsnodes\nstart mining\nstop mining\nend\n")
         elif a == "end":
