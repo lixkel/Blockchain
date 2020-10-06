@@ -9,13 +9,17 @@ version:
 4 - version
 8 - timestamp
 
+getheaders:
+32 - starting hash
+32 - stopping hash
+
 headers:
-2 - number of headers
+1 - number of headers
 32x - headers
 
 getblocks:
-32 - starting hash
-32 - stopping hahsh
+1 - number of headers
+32x - headers
 
 block:
 variable - block

@@ -48,30 +48,31 @@ def handle_message(soc, message):
                 else:
                     pass
     elif command == "headers":
-        num_headers = int(payload[:4],16)
-        index = 4
-        #toto je docasne este presne neviem ako idem robit sync
+        num_headers = int(payload[:2],16)
+        index = 2
+        getblocks = ""
         for i in range(num_headers):
             header_hash = payload[index:index+64]
             blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash,))
             result = blockchain.c.fetchone()
-            getblocks = ""
-            if result == None and i % 127 == 0:
+            if result == None:
                 getblocks += header_hash
-                if i == 127:
-                    break
-        if len(getblocks) == 64:
-            getblocks += getblocks
-        send_message("getblocks", soc=soc, cargo=getblocks)
-    elif command == "getblocks":
-        if payload[:64] == payload[64:]:
-            header_hash = payload[:64]
+            index += 64
+        new_message = payload[:2] + getblocks
+        send_message("getblocks", soc=soc, cargo=new_message)
+    elif command == "getblocks":#toto by mohol poslat hocikto to by som mal riesit
+        num_headers = int(payload[:2],16)
+        index = 2
+        for i in range(num_headers):
+            header_hash = payload[index:index+64]
             blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash,))
             result = blockchain.c.fetchone()
-            block = result[1]
-            send_message("block", soc=soc, cargo=block)
-        else:
-            prnt.put("dojebana picovina")
+            if result:
+                block = result[1]
+                send_message("block", soc=soc, cargo=block)
+            else:
+                prnt.put("dojebana picovina")
+            index += 64
     elif command == "block":
         print(payload)
 
@@ -101,7 +102,7 @@ def send_message(command, soc = None, cargo = None):
     elif command == "broadcast":
         payload, type = cargo
         if type == "headers":
-            payload = "0001" + payload
+            payload = "01" + payload
         payload = bytes.fromhex(payload)
         payload_lenght = hex(len(payload))[2:]
         header = create_header(type, payload_lenght)
@@ -116,6 +117,10 @@ def send_message(command, soc = None, cargo = None):
         payload_lenght = hex(len(payload))[2:]
         header = create_header("block", payload_lenght)
         outbound.put(["send", [soc, header + payload]])
+    elif command == "sync":
+        blockchain.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+        block = blockchain.c.fetchone()[0]
+
 
 
 def create_header(command, payload_lenght):
@@ -187,8 +192,14 @@ while True:
             if mining:
                 mining.terminate()
                 mining = None
+        elif a == "sync":
+            if b == "":
+                display.put(list(nodes.values()))
+            else:
+                sock = list(nodes.values())[b].socket
+                send_message("sync", soc=sock)
         elif a == "end":
-            #print(mining)
+            print(mining)
             outbound.put(["end", []])
             local_node.join()
             #if mining:
