@@ -48,23 +48,19 @@ def handle_message(soc, message):
                 else:
                     pass
     elif command == "headers":
-        print(f"headers: {payload}")
         num_headers = int(payload[:2],16)
         index = 2
         getblocks = ""
         for i in range(num_headers):
             header_hash = payload[index:index+64]
-            print(f"headers header_hash: {header_hash}")
             blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash,))
             result = blockchain.c.fetchone()
-            print(f"headers result: {result}")
             if result == None:
                 getblocks += header_hash
             index += 64
         new_message = payload[:2] + getblocks
         send_message("getblocks", soc=soc, cargo=new_message)
     elif command == "getblocks":#toto by mohol poslat hocikto to by som mal riesit
-        print(f"getblocks: {payload}")
         num_headers = int(payload[:2],16)
         index = 2
         for i in range(num_headers):
@@ -83,7 +79,6 @@ def handle_message(soc, message):
         if len(payload) == 128:
             start_hash = payload[:64]
             stop_hash = payload[64:]
-            print(f"getheaders: {payload}")
             blockchain.c.execute("SELECT rowid FROM blockchain WHERE hash = (?);", (start_hash,))
             rowid = blockchain.c.fetchone()[0]
             if rowid:
@@ -92,7 +87,6 @@ def handle_message(soc, message):
                     rowid += 1
                     blockchain.c.execute("SELECT * FROM blockchain WHERE rowid = (?);", (rowid,))
                     block = blockchain.c.fetchone()
-                    print(f"getheaders block: {block}")
                     if block:
                         new_message += block[0]
                         if block[0] == stop_hash:
@@ -108,7 +102,6 @@ def handle_message(soc, message):
                             if len(header_num) % 2 == 1:
                                 header_num = "0" + header_num
                             new_message = header_num + new_message
-                            print(f"getheaders new_message: {new_message}")
                             send_message("broadcast", cargo=[new_message, "headers"])
                             break
 
