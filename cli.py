@@ -44,7 +44,7 @@ def cli(com, display, prnt):
         elif a == "stop mining":
             com.put([a, ""])
         elif a == "sync":
-            com.put([a, ["", ""]])
+            com.put([a, ""])
             while display.empty():
                 pass
             for i in display.get():
