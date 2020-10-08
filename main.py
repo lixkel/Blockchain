@@ -18,6 +18,7 @@ def handle_message(soc, message):
     global nodes
     command = bytes.fromhex(message[:24].lstrip("0")).decode("utf-8")
     payload = message[32:]
+    print(command)
     if command == "version":
         if nodes[soc.getpeername()].expecting == "version":
             node_version = payload[:8]
@@ -44,11 +45,11 @@ def handle_message(soc, message):
                 #mal by som to spreavit tak aby sa checkovalo len raz ci je tx v mempool
                 if payload not in blockchain.mempool:
                     blockchain.mempool.append(payload)
-                    send_message("broadcast", soc=soc, cargo=[payload, "transaction"])
+                    send_message("broadcast", soc=soc.getpeername(), cargo=[payload, "transaction"])
                 else:
                     pass
     elif command == "headers":
-        if headers == "00":
+        if payload == "00":
             sync = True
         num_headers = int(payload[:2],16)
         index = 2
@@ -77,7 +78,7 @@ def handle_message(soc, message):
             index += 64
     elif command == "block":
         print(f"new block: {payload}")
-        if blockchain.verify_block():
+        if blockchain.verify_block(payload):
             blockchain.append(payload)
         if sync == False:
             send_message("sync", soc=soc)
@@ -195,6 +196,7 @@ while True:
     if not mined.empty():
         new_block = mined.get()
         print(new_block)
+        new_block_hash = blockchain.hash(new_block[:216])
         blockchain.append(new_block)
         send_message("broadcast", cargo=["01"+new_block_hash, "headers"])
         block_header, txs = blockchain.build_block()

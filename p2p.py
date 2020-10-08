@@ -59,7 +59,7 @@ def main(nodes, inbound, outbound):
             elif comm == "broadcast":
                 skip_soc, tx = body
                 for soc in sockets_list:
-                    if soc == server_socket or soc == skip_soc:
+                    if soc == server_socket or soc.getpeername() == skip_soc:
                         continue
                     send_message(soc, tx)
             elif comm == "end":

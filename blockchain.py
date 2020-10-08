@@ -81,6 +81,7 @@ class Blockchain:
 
     def verify_tx(self, tx):
         global SigningKey, VerifyingKey, SECP256k1
+        print(tx)
         sig = bytes.fromhex(tx[-128:])
         vk = VerifyingKey.from_string(bytes.fromhex(tx[-256:-128]), curve=SECP256k1)
         if vk.verify(sig, bytes.fromhex(tx[2:-128])):
@@ -176,7 +177,7 @@ class Blockchain:
         return block_header, txs
 
 
-def append(self, new_block):
-    new_block_hash = self.hash(new_block[:216])
-    self.c.execute("INSERT INTO blockchain VALUES (?,?);", (new_block_hash, new_block))
-    self.conn.commit()
+    def append(self, new_block):
+        new_block_hash = self.hash(new_block[:216])
+        self.c.execute("INSERT INTO blockchain VALUES (?,?);", (new_block_hash, new_block))
+        self.conn.commit()
