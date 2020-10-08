@@ -174,3 +174,9 @@ class Blockchain:
         previous_header = self.c.fetchone()[0]
         block_header = self.version + previous_header + merkle_root + self.target + timestamp
         return block_header, txs
+
+
+def append(self, new_block):
+    new_block_hash = self.hash(new_block[:216])
+    self.c.execute("INSERT INTO blockchain VALUES (?,?);", (new_block_hash, new_block))
+    self.conn.commit()

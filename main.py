@@ -48,6 +48,8 @@ def handle_message(soc, message):
                 else:
                     pass
     elif command == "headers":
+        if headers == "00":
+            sync = True
         num_headers = int(payload[:2],16)
         index = 2
         getblocks = ""
@@ -75,6 +77,10 @@ def handle_message(soc, message):
             index += 64
     elif command == "block":
         print(f"new block: {payload}")
+        if blockchain.verify_block():
+            blockchain.append(payload)
+        if sync == False:
+            send_message("sync", soc=soc)
     elif command == "getheaders":
         if len(payload) == 128:
             start_hash = payload[:64]
@@ -175,6 +181,7 @@ mined = Queue()
 com = Queue()
 prnt = Queue()
 display = Queue()
+sync = True
 blockchain = Blockchain(version,prnt)
 local_node = threading.Thread(target=p2p.start_node, args=(nodes, inbound, outbound))
 local_node.start()
@@ -188,10 +195,8 @@ while True:
     if not mined.empty():
         new_block = mined.get()
         print(new_block)
-        new_block_hash = blockchain.hash(new_block[:216])
+        blockchain.append(new_block)
         send_message("broadcast", cargo=["01"+new_block_hash, "headers"])
-        blockchain.c.execute("INSERT INTO blockchain VALUES (?,?);", (new_block_hash, new_block))
-        blockchain.conn.commit()
         block_header, txs = blockchain.build_block()
         to_mine.put([block_header, txs])
     if not com.empty():
@@ -227,8 +232,12 @@ while True:
             if b == "":
                 display.put(list(nodes.values()))
             else:
+                sync = False
                 sock = list(nodes.values())[b].socket
                 send_message("sync", soc=sock)
+        elif a == "highest":
+            blockchain.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+            print(blockchain.c.fetchone()[1])
         elif a == "end":
             #print(mining)
             outbound.put(["end", []])
