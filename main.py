@@ -16,6 +16,7 @@ from blockchain import Blockchain
 def handle_message(soc, message):
     global version
     global nodes
+    global sync
     command = bytes.fromhex(message[:24].lstrip("0")).decode("utf-8")
     payload = message[32:]
     print(command)
@@ -51,6 +52,7 @@ def handle_message(soc, message):
     elif command == "headers":
         if payload == "00":
             sync = True
+            return
         num_headers = int(payload[:2],16)
         index = 2
         getblocks = ""

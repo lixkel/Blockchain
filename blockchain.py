@@ -68,7 +68,7 @@ class Blockchain:
             message_size = int(block[index:index+2], 16) * 2
             index += 2
             tx_size = index + message_size + tx_remaining
-            tx = block[index+2:tx_size]
+            tx = block[index-2:tx_size]
             if not self.verify_tx(tx):
                 return False
             tx_hashes.append(self.hash(tx[2:]))
