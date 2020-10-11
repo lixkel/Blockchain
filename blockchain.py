@@ -11,7 +11,6 @@ class Blockchain:
         self.c = self.conn.cursor()
         self.mempool = []
         self.pub_keys = {}
-        self.target = "00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
         try:
             self.c.execute("SELECT * FROM blockchain")
 
@@ -46,6 +45,12 @@ class Blockchain:
                 self.pub_keys[pair[0]] = pair[1]
         except FileNotFoundError:
             pass
+        self.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+        self.height = self.c.fetchone()[0]
+        self.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+        self.target = self.c.fetchone()[1][136:200]
+        print(self.target)
+
 
 
     def verify_block(self, block):
@@ -181,3 +186,29 @@ class Blockchain:
         new_block_hash = self.hash(new_block[:216])
         self.c.execute("INSERT INTO blockchain VALUES (?,?);", (new_block_hash, new_block))
         self.conn.commit()
+        self.height += 1
+        if self.height % 10 == 0:
+            self.calc_target()
+
+
+    def calc_target(self):
+        calc_height = self.height
+        self.c.execute("SELECT * FROM blockchain WHERE rowid = (?);", (calc_height,))
+        heighest = int(self.c.fetchone()[1][200:208], 16)
+        self.c.execute("SELECT * FROM blockchain WHERE rowid = (?);", (calc_height - 9,))
+        lowest = int(self.c.fetchone()[1][200:208], 16)
+        difference = heighest - lowest
+        change = float(difference) / 300.0
+        if change > 4.0:
+            change = 4.0
+        elif change < 0.25:
+            change = 0.25
+        new_target = hex(int(float(int(self.target, 16)) * change))[2:]
+        if len(new_target) < 64:
+            dif = 64 - len(new_target)
+            new_target = ("0" * dif) + new_target
+        elif len(new_target) > 64:
+            new_target = "f" * 64
+        self.target = new_target
+        print(change)
+        print(self.target)
