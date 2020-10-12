@@ -17,6 +17,7 @@ def handle_message(soc, message):
     global version
     global nodes
     global sync
+    global expec_blocks
     command = bytes.fromhex(message[:24].lstrip("0")).decode("utf-8")
     payload = message[32:]
     print(command)
@@ -65,6 +66,7 @@ def handle_message(soc, message):
             result = blockchain.c.fetchone()
             if result == None:
                 getblocks += header_hash
+                expec_blocks += 1
             index += 64
         new_message = payload[:2] + getblocks
         send_message("getblocks", soc=soc, cargo=new_message)
@@ -83,9 +85,10 @@ def handle_message(soc, message):
             index += 64
     elif command == "block":
         print(f"new block: {payload}")
+        expec_blocks -= 1
         if blockchain.verify_block(payload):
             blockchain.append(payload)
-        if sync == False:
+        if sync == False and expec_blocks == 0:
             send_message("sync", soc=soc)
     elif command == "getheaders":
         if len(payload) == 128:
@@ -181,6 +184,7 @@ def fill(entity, fill):
 
 version = "00000001"
 nodes = {}
+expec_blocks = 0
 inbound = Queue()
 outbound = Queue()
 to_mine = Queue()
