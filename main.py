@@ -25,6 +25,9 @@ def handle_message(soc, message):
             node_version = payload[:8]
             if node_version != version:
                 return
+            best_height = int(payload[-8:], 16)
+            nodes[soc.getpeername()].best_height = best_height
+            print(nodes[soc.getpeername()].best_height)
             timestamp = int(payload[8:24], 16)
             time_difference = int(int(time()) - timestamp)
             if -300 < time_difference > 300:
@@ -120,7 +123,9 @@ def send_message(command, soc = None, cargo = None):
     global nodes
     if command == "version" or command == "version1":
         timestamp = hex(int(time()))[2:]
-        payload = bytes.fromhex(version + timestamp)
+        best_height = hex(blockchain.height)[2:]
+        best_height = fill(best_height, 8).hex()
+        payload = bytes.fromhex(version + timestamp + best_height)
         payload_lenght = hex(len(payload))[2:]
         header = create_header("version", payload_lenght)
         if command == "version1":
@@ -160,7 +165,6 @@ def send_message(command, soc = None, cargo = None):
         payload_lenght = hex(len(payload))[2:]
         header = create_header("getheaders", payload_lenght)
         outbound.put(["send", [soc, header + payload]])
-
 
 
 def create_header(command, payload_lenght):

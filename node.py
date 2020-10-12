@@ -4,3 +4,4 @@ class node:
         self.authorized = False
         self.connection = conn
         self.expecting = exp
+        self.best_height = 0
