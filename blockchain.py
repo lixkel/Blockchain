@@ -11,10 +11,8 @@ class Blockchain:
         self.c = self.conn.cursor()
         self.mempool = []
         self.pub_keys = {}
-        try:
-            self.c.execute("SELECT * FROM blockchain")
-
-        except:
+        self.c.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='blockchain'")
+        if c.fetchone()[0] != 1 :
             self.c.execute("""CREATE TABLE blockchain (
                 hash text,
                 block text)
