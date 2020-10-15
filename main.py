@@ -18,6 +18,7 @@ def handle_message(soc, message):
     global nodes
     global sync
     global expec_blocks
+    global my_addr
     command = bytes.fromhex(message[:24].lstrip("0")).decode("utf-8")
     payload = message[32:]
     print(command)
@@ -26,9 +27,10 @@ def handle_message(soc, message):
             node_version = payload[:8]
             if node_version != version:
                 return
-            best_height = int(payload[-8:], 16)
+            best_height = int(payload[-34:-26], 16)
             nodes[soc.getpeername()].best_height = best_height
             print(nodes[soc.getpeername()].best_height)
+            my_addr = bytes.fromhex(payload[-26:]).decode()
             timestamp = int(payload[8:24], 16)
             time_difference = int(int(time()) - timestamp)
             if -300 < time_difference > 300:
@@ -128,7 +130,11 @@ def send_message(command, soc = None, cargo = None):
         timestamp = hex(int(time()))[2:]
         best_height = hex(blockchain.height)[2:]
         best_height = fill(best_height, 8).hex()
-        payload = bytes.fromhex(version + timestamp + best_height)
+        if command == "version1":
+            addr_recv = cargo.encode().hex()
+        else:
+            addr_recv = soc.getpeername()[0].encode().hex()
+        payload = bytes.fromhex(version + timestamp + best_height + addr_recv)
         payload_lenght = hex(len(payload))[2:]
         header = create_header("version", payload_lenght)
         if command == "version1":
@@ -185,6 +191,8 @@ def fill(entity, fill):
 version = "00000001"
 nodes = {}
 expec_blocks = 0
+my_addr = ""
+hadcoded_nodes = ["192.168.1.101",]
 inbound = Queue()
 outbound = Queue()
 to_mine = Queue()
@@ -193,11 +201,14 @@ com = Queue()
 prnt = Queue()
 display = Queue()
 sync = True
+#conn = sqlite3.connect("nodes.db")
+#c = conn.cursor()
 blockchain = Blockchain(version,prnt)
 local_node = threading.Thread(target=p2p.start_node, args=(nodes, inbound, outbound))
 local_node.start()
 tcli = threading.Thread(target=cli, args=(com, display, prnt))
 tcli.start()
+
 
 while True:
     if not inbound.empty():
@@ -214,7 +225,7 @@ while True:
     if not com.empty():
         a, b = com.get()
         if a == "con":
-            outbound.put(["connect", [b, send_message("version1")]])
+            outbound.put(["connect", [b, send_message("version1", cargo=b)]])
         elif a == "send":
             b,c = b
             if b == "":
