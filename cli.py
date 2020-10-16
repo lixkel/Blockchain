@@ -6,7 +6,11 @@ def cli(com, display, prnt):
         a = input("zadaj daco: ")
         if a == "con":
             b = input("zadaj adresu: ")
-            com.put([a, b])
+            c = input("zadaj port (ak prazdne tak default): ")
+            if c == "":
+                c = 9999
+            c = int(c)
+            com.put([a, [b, c]])
         elif a == "send":
             com.put([a, ["", ""]])
             while display.empty():

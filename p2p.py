@@ -43,15 +43,16 @@ def main(nodes, inbound, outbound):
         if not outbound.empty():
             comm, body = outbound.get()
             if comm == "connect":
-                addr, vers = body
+                addr, port, vers = body
                 new_soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 try:
-                    new_soc.connect((addr, 9999))
+                    new_soc.connect((addr, port))
                     new_node = node((new_soc, new_soc.getpeername()), "outbound", "version")
                     sockets_list.append(new_node.socket)
                     nodes[new_node.address] = new_node
                     send_message(new_node.socket, vers)
                 except socket.error as e:
+                    inbound.put(["", "error"])
                     print(f"Address-related error connecting to server: {e}")
             elif comm == "send":
                 soc, message = body

@@ -191,6 +191,7 @@ def fill(entity, fill):
 version = "00000001"
 nodes = {}
 expec_blocks = 0
+opt_nodes = 5
 my_addr = ""
 hadcoded_nodes = ["192.168.1.101",]
 inbound = Queue()
@@ -225,7 +226,8 @@ while True:
     if not com.empty():
         a, b = com.get()
         if a == "con":
-            outbound.put(["connect", [b, send_message("version1", cargo=b)]])
+            b, c = b
+            outbound.put(["connect", [b, c, send_message("version1", cargo=b)]])
         elif a == "send":
             b,c = b
             if b == "":
