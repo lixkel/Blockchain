@@ -27,10 +27,10 @@ def handle_message(soc, message):
             node_version = payload[:8]
             if node_version != version:
                 return
-            best_height = int(payload[-34:-26], 16)
+            best_height = int(payload[-38:-30], 16)
             nodes[soc.getpeername()].best_height = best_height
             print(nodes[soc.getpeername()].best_height)
-            my_addr = bytes.fromhex(payload[-26:]).decode()
+            my_addr = bytes.fromhex(payload[-30:]).decode()
             timestamp = int(payload[8:24], 16)
             time_difference = int(int(time()) - timestamp)
             if -300 < time_difference > 300:
@@ -129,11 +129,16 @@ def send_message(command, soc = None, cargo = None):
     if command == "version" or command == "version1":
         timestamp = hex(int(time()))[2:]
         best_height = hex(blockchain.height)[2:]
-        best_height = fill(best_height, 8).hex()
+        best_height = fill(best_height, 8)
         if command == "version1":
-            addr_recv = cargo.encode().hex()
+            addr_recv = cargo
         else:
-            addr_recv = soc.getpeername()[0].encode().hex()
+            addr_recv = soc.getpeername()[0]
+        ip = addr_recv.split(".")
+        addr_recv = ""
+        for i in ip:
+            addr_recv += fill(i, 3) + "."
+        addr_recv = addr_recv[:-1].encode().hex()
         payload = bytes.fromhex(version + timestamp + best_height + addr_recv)
         payload_lenght = hex(len(payload))[2:]
         header = create_header("version", payload_lenght)
@@ -174,10 +179,12 @@ def send_message(command, soc = None, cargo = None):
         payload_lenght = hex(len(payload))[2:]
         header = create_header("getheaders", payload_lenght)
         outbound.put(["send", [soc, header + payload]])
+    elif command == "addr":
+        pass
 
 
 def create_header(command, payload_lenght):
-    return fill(command.encode("utf-8").hex(), 24) + fill(payload_lenght, 8)
+    return bytes.fromhex(fill(command.encode("utf-8").hex(), 24) + fill(payload_lenght, 8))
 
 
 def fill(entity, fill):
@@ -185,7 +192,7 @@ def fill(entity, fill):
     if lenght < fill:
         miss = fill - lenght
         entity = miss*"0" + entity
-    return bytes.fromhex(entity)
+    return entity
 
 
 version = "00000001"
@@ -193,7 +200,7 @@ nodes = {}
 expec_blocks = 0
 opt_nodes = 5
 my_addr = ""
-hadcoded_nodes = ["192.168.1.101",]
+hadcoded_nodes = (("192.168.1.101", 9999),)
 inbound = Queue()
 outbound = Queue()
 to_mine = Queue()
