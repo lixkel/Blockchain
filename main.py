@@ -71,7 +71,7 @@ def handle_message(soc, message):
                 expec_blocks += 1
             index += 64
         new_message = payload[:2] + getblocks
-        send_message("getblocks", soc=soc, cargo=new_message)
+        send_message("universal", soc=soc, cargo=(new_message, "getblocks"))
     elif command == "getblocks":#toto by mohol poslat hocikto to by som mal riesit
         num_headers = int(payload[:2],16)
         index = 2
@@ -81,7 +81,7 @@ def handle_message(soc, message):
             result = blockchain.c.fetchone()
             if result:
                 block = result[1]
-                send_message("block", soc=soc, cargo=block)
+                send_message("universal", soc=soc, cargo=(block, "block"))
             else:
                 print("dojebana picovina")
             index += 64
@@ -121,6 +121,17 @@ def handle_message(soc, message):
                             new_message = header_num + new_message
                             send_message("broadcast", cargo=[new_message, "headers"])
                             break
+    elif command == "getheader":
+        send_message("addr", soc=soc)
+    elif command == "addr":
+        num_addr = int(payload[:2], 16)
+        if num_addr > 1000:
+            return
+        for i in range(num_addr):
+            node_ip = payload[index:index+30]
+            node_port = int(payload[index:index+34], 16)
+            index += 34
+            c.execute("INSERT INTO nodes VALUES (?,?);", (node_ip, node_port))
 
 
 def send_message(command, soc = None, cargo = None):
@@ -162,15 +173,11 @@ def send_message(command, soc = None, cargo = None):
         payload_lenght = hex(len(payload))[2:]
         header = create_header(type, payload_lenght)
         outbound.put(["broadcast", [soc, header + payload]])
-    elif command == "getblocks":
+    elif command == "universal":
+        cargo, type = cargo
         payload = bytes.fromhex(cargo)
         payload_lenght = hex(len(payload))[2:]
-        header = create_header("getblocks", payload_lenght)
-        outbound.put(["send", [soc, header + payload]])
-    elif command == "block":
-        payload = bytes.fromhex(cargo)
-        payload_lenght = hex(len(payload))[2:]
-        header = create_header("block", payload_lenght)
+        header = create_header(type, payload_lenght)
         outbound.put(["send", [soc, header + payload]])
     elif command == "sync":
         blockchain.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
@@ -180,7 +187,27 @@ def send_message(command, soc = None, cargo = None):
         header = create_header("getheaders", payload_lenght)
         outbound.put(["send", [soc, header + payload]])
     elif command == "addr":
-        pass
+        if cargo != None:
+            payload = bytes.fromhex("0001" + my_addr[0].encode() + fill(hex(my_addr[1])[2:], 4).encode())
+        else:
+            c.execute("SELECT * FROM nodes;")
+            if c.fetchall() == []:
+                return
+            ls_nodes = c.fetchall()
+            num_addr = 0
+            payload = ""
+            for node in ls_nodes:
+                num_addr += 1
+                payload = node[0].encode() + fill(hex(node[1])[2:], 4).encode()
+                if num_addr == 1000:
+                    break
+            payload = bytes.fromhex(fill(hex(num_addr)[2:], 4) + payload)
+        payload_lenght = hex(len(payload))[2:]
+        header = create_header("addr", payload_lenght)
+        outbound.put(["send", [soc, header + payload]])
+    elif command == "only":
+        header = create_header(cargo, "0")
+        outbound.put(["send", [soc, header]])
 
 
 def create_header(command, payload_lenght):
@@ -200,6 +227,7 @@ nodes = {}
 expec_blocks = 0
 opt_nodes = 5
 my_addr = ""
+port = 9999
 hadcoded_nodes = (("192.168.1.101", 9999),)
 inbound = Queue()
 outbound = Queue()
@@ -212,10 +240,11 @@ sync = True
 #conn = sqlite3.connect("nodes.db")
 #c = conn.cursor()
 blockchain = Blockchain(version,prnt)
-local_node = threading.Thread(target=p2p.start_node, args=(nodes, inbound, outbound))
+local_node = threading.Thread(target=p2p.start_node, args=(port, nodes, inbound, outbound))
 local_node.start()
 tcli = threading.Thread(target=cli, args=(com, display, prnt))
 tcli.start()
+
 
 
 while True:

@@ -1,11 +1,10 @@
-def start_node(nodes, inbound, outbound):
+def start_node(port, nodes, inbound, outbound):
     import socket
     global socket
     from node import node
     global server_socket
     global sockets_list
     host = "0.0.0.0"
-    port = 9999
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.setblocking(0)

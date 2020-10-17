@@ -25,3 +25,11 @@ getblocks:
 
 block:
 variable - block
+
+addr:
+2 - number of addresses
+15 - ip address
+2 - port
+
+getaddr:
+nothing
