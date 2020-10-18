@@ -27,10 +27,11 @@ def handle_message(soc, message):
             node_version = payload[:8]
             if node_version != version:
                 return
-            best_height = int(payload[-38:-30], 16)
+            best_height = int(payload[-16:-8], 16)
             nodes[soc.getpeername()].best_height = best_height
             print(nodes[soc.getpeername()].best_height)
-            my_addr = bytes.fromhex(payload[-30:]).decode()
+            my_addr = decode_ip(payload[-8:])
+            print(my_addr)
             timestamp = int(payload[8:24], 16)
             time_difference = int(int(time()) - timestamp)
             if -300 < time_difference > 300:
@@ -127,10 +128,11 @@ def handle_message(soc, message):
         num_addr = int(payload[:2], 16)
         if num_addr > 1000:
             return
+        index = 2
         for i in range(num_addr):
-            node_ip = payload[index:index+30]
-            node_port = int(payload[index:index+34], 16)
-            index += 34
+            node_ip = decode_ip(payload[index:index+8])
+            node_port = int(payload[index:index+12], 16)
+            index += 12
             c.execute("INSERT INTO nodes VALUES (?,?);", (node_ip, node_port))
 
 
@@ -145,11 +147,7 @@ def send_message(command, soc = None, cargo = None):
             addr_recv = cargo
         else:
             addr_recv = soc.getpeername()[0]
-        ip = addr_recv.split(".")
-        addr_recv = ""
-        for i in ip:
-            addr_recv += fill(i, 3) + "."
-        addr_recv = addr_recv[:-1].encode().hex()
+        addr_recv = encode_ip(addr_recv)
         payload = bytes.fromhex(version + timestamp + best_height + addr_recv)
         payload_lenght = hex(len(payload))[2:]
         header = create_header("version", payload_lenght)
@@ -198,7 +196,7 @@ def send_message(command, soc = None, cargo = None):
             payload = ""
             for node in ls_nodes:
                 num_addr += 1
-                payload = node[0].encode() + fill(hex(node[1])[2:], 4).encode()
+                payload = encode_ip(node[0]) + fill(hex(node[1])[2:], 4).encode()
                 if num_addr == 1000:
                     break
             payload = bytes.fromhex(fill(hex(num_addr)[2:], 4) + payload)
@@ -220,6 +218,30 @@ def fill(entity, fill):
         miss = fill - lenght
         entity = miss*"0" + entity
     return entity
+
+
+def encode_ip(ip):
+    ip = ip.split(".")
+    addr = ""
+    for i in ip:
+        if 0 > int(i) > 255:
+            print("neplatna adresa")
+            return
+        temp = hex(int(i))[2:]
+        addr += fill(temp, 2)
+    return addr
+
+
+def decode_ip(ip):
+    previ = -1
+    addr = ""
+    for i in range(2, 10, 2):
+        if i == 2:
+            addr = str(int(ip[-i:], 16)) + "." + addr
+        else:
+            addr = str(int(ip[-i:previ], 16)) + "." + addr
+        previ = -i
+    return addr[:-1]
 
 
 version = "00000001"
