@@ -47,6 +47,8 @@ def handle_message(soc, message):
         if nodes[soc.getpeername()].expecting == "verack":
             nodes[soc.getpeername()].authorized = True
             nodes[soc.getpeername()].expecting = ""
+            if accepting:
+                send_message("addr", soc=nodes[soc.getpeername()].socket, cargo="init")
     elif command == "transaction":
         if nodes[soc.getpeername()].authorized == True:
             if blockchain.verify_tx(payload) == True:
@@ -125,14 +127,15 @@ def handle_message(soc, message):
     elif command == "getheader":
         send_message("addr", soc=soc)
     elif command == "addr":
-        num_addr = int(payload[:2], 16)
+        num_addr = int(payload[:4], 16)
         if num_addr > 1000:
             return
-        index = 2
+        index = 4
         for i in range(num_addr):
             node_ip = decode_ip(payload[index:index+8])
-            node_port = int(payload[index:index+12], 16)
+            node_port = int(payload[index+8:index+12], 16)
             index += 12
+            print(node_ip, node_port)
             c.execute("INSERT INTO nodes VALUES (?,?);", (node_ip, node_port))
 
 
@@ -186,7 +189,7 @@ def send_message(command, soc = None, cargo = None):
         outbound.put(["send", [soc, header + payload]])
     elif command == "addr":
         if cargo != None:
-            payload = bytes.fromhex("0001" + my_addr[0].encode() + fill(hex(my_addr[1])[2:], 4).encode())
+            payload = bytes.fromhex("0001" + encode_ip(my_addr) + fill(hex(port)[2:], 4))
         else:
             c.execute("SELECT * FROM nodes;")
             if c.fetchall() == []:
@@ -196,7 +199,7 @@ def send_message(command, soc = None, cargo = None):
             payload = ""
             for node in ls_nodes:
                 num_addr += 1
-                payload = encode_ip(node[0]) + fill(hex(node[1])[2:], 4).encode()
+                payload = encode_ip(node[0]) + fill(hex(node[1])[2:], 4)
                 if num_addr == 1000:
                     break
             payload = bytes.fromhex(fill(hex(num_addr)[2:], 4) + payload)
@@ -250,6 +253,7 @@ expec_blocks = 0
 opt_nodes = 5
 my_addr = ""
 port = 9999
+accepting = True
 hadcoded_nodes = (("192.168.1.101", 9999),)
 inbound = Queue()
 outbound = Queue()
@@ -267,7 +271,34 @@ local_node.start()
 tcli = threading.Thread(target=cli, args=(com, display, prnt))
 tcli.start()
 
+c.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='blockchain'")
+if c.fetchone()[0] != 1:
+    c.execute("""CREATE TABLE nodes (
+        addr text,
+        port text)
+        """)
 
+c.execute("SELECT * FROM nodes;")
+if c.fetchall() == []:
+    for i in hadcoded_nodes:
+        outbound.put(["connect", [i[0], send_message("version1", cargo=i[1])]])
+        while True:
+            if not inbound.empty():
+                soc, message = inbound.get()
+                if message == "error":
+                    break
+                handle_message(soc, message)
+            if list(nodes.values()) != []:
+                if list(nodes.values())[0].authorized:
+                    send_message("only", soc=list(nodes.values())[0].socket, cargo="getheaders")
+
+
+c.execute("SELECT MIN(rowid) FROM nodes;")
+rowid = c.fetchone()[0]
+c.execute("SELECT MAX(rowid) FROM nodes;")
+max_rowid = c.fetchone()[0]
+while rowid <= max_rowid and len(nodes) < opt_nodes:
+    c.execute("SELECT * FROM blockchain WHERE rowid = (?);", (rowid,))
 
 while True:
     if not inbound.empty():
