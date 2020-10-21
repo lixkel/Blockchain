@@ -37,7 +37,7 @@ def main(nodes, inbound, outbound):
 
         for exception in exception_sockets:
             sockets_list.remove(expection)
-            del nodes[exception]
+            del nodes[exception.getpeername()]
 
         if not outbound.empty():
             comm, body = outbound.get()
@@ -62,6 +62,12 @@ def main(nodes, inbound, outbound):
                     if soc == server_socket or soc.getpeername() == skip_soc:
                         continue
                     send_message(soc, tx)
+            elif comm = "close":
+                for soc in sockets_list:
+                    if soc.getpeername() == body:
+                        sockets_list.remove(soc)
+                        del nodes[soc.getpeername()]
+                        soc.close()
             elif comm == "end":
                 for soc in sockets_list:
                     soc.close()
