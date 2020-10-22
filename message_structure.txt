@@ -10,6 +10,7 @@ version:
 8 - timestamp
 4 - best height
 4 - address of receiving node
+2 - port of transmitter
 
 getheaders:
 32 - starting hash

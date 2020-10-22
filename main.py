@@ -140,6 +140,7 @@ def handle_message(soc, message):
             index += 12
             print(node_ip, node_port)
             c.execute("INSERT INTO nodes VALUES (?,?);", (node_ip, node_port))
+        conn.commit()
 
 
 def send_message(command, soc = None, cargo = None):
@@ -252,7 +253,22 @@ def decode_ip(ip):
     return addr[:-1]
 
 
-
+def connect():
+    global nodes, opt_nodes, con_sent
+    c.execute("SELECT MIN(rowid) FROM nodes;")
+    rowid = c.fetchone()[0]
+    c.execute("SELECT MAX(rowid) FROM nodes;")
+    max_rowid = c.fetchone()[0]
+    node_list = [(i.address[0], i.port) for i in list(nodes.keys())]
+    print(node_list)
+    while rowid <= max_rowid:#treba riesit ako sa budem pripajat ked uz budem popripajany ale sa odpoja
+        c.execute("SELECT * FROM blockchain WHERE rowid = (?);", (rowid,))
+        line = tuple(c.fetchone())#ako kukat ci uz niesme pripojeny
+        if line not in node_list:#vytvorit list nodov a tam checkovat
+            outbound.put(["connect", [i[0], send_message("version1", cargo=i[1])]])
+            con_sent = True
+            break
+        rowid += 1
 
 
 version = "00000001"
@@ -261,7 +277,9 @@ expec_blocks = 0
 opt_nodes = 5
 my_addr = ""
 port = 9999
+default_port = 9999
 accepting = True
+con_sent = False
 hadcoded_nodes = (("192.168.1.101", 9999),)
 inbound = Queue()
 outbound = Queue()
@@ -271,8 +289,8 @@ com = Queue()
 prnt = Queue()
 display = Queue()
 sync = True
-#conn = sqlite3.connect("nodes.db")
-#c = conn.cursor()
+conn = sqlite3.connect("nodes.db")
+c = conn.cursor()
 blockchain = Blockchain(version,prnt)
 local_node = threading.Thread(target=p2p.start_node, args=(port, nodes, inbound, outbound))
 local_node.start()
@@ -282,10 +300,11 @@ tcli.start()
 c.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='blockchain'")
 if c.fetchone()[0] != 1:
     c.execute("""CREATE TABLE nodes (
-        addr text,
-        port text)
+        addr TEXT,
+        port INTEGER)
         """)
 
+print("finding nodes...")
 c.execute("SELECT * FROM nodes;")
 if c.fetchall() == []:
     for i in hadcoded_nodes:
@@ -304,30 +323,28 @@ if c.fetchall() == []:
             if sent:
                 c.execute("SELECT * FROM nodes;")
                 if c.fetchall() != []:
-                    sent = True
                     break
                 if time() - sent > 30.0:
                     break
         outbound.put(["close", soc=list(nodes.values())[0].address])
-        if sent == True:
+        c.execute("SELECT * FROM nodes;")
+        if len(c.fetchall()) >= 8:
             break#treba zatvorit conection
-
-c.execute("SELECT MIN(rowid) FROM nodes;")
-rowid = c.fetchone()[0]
-c.execute("SELECT MAX(rowid) FROM nodes;")
-max_rowid = c.fetchone()[0]
-while rowid <= max_rowid and len(nodes) < opt_nodes:#treba riesit ako sa budem pripajat ked uz budem popripajany ale sa odpoja
-    c.execute("SELECT * FROM blockchain WHERE rowid = (?);", (rowid,))
+print("connecting...")
 
 while True:
     if len(nodes) < opt_nodes:
-        #connect()
-        pass
+        if len(nodes) == 0:
+            print("connecting...")
+        if not con_sent:
+            connect()#mozno by bolo lepsie spravit init connect v loope pred tymto
     if not inbound.empty():
         soc, message = inbound.get()
         if message == "error":
-            outbound.put(["close", soc.getpeername()])
-        handle_message(soc, message)
+            c.execute("DELETE FROM nodes WHERE addr=(?) AND port=(?)", (soc[1], soc[2]))
+            conn.commit()
+        else:
+            handle_message(soc, message)
     if not mined.empty():
         new_block = mined.get()
         print(new_block)

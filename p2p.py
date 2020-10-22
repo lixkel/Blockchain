@@ -51,7 +51,7 @@ def main(nodes, inbound, outbound):
                     nodes[new_node.address] = new_node
                     send_message(new_node.socket, vers)
                 except socket.error as e:
-                    inbound.put(["", "error"])
+                    inbound.put([(addr, port), "error"])
                     print(f"Address-related error connecting to server: {e}")
             elif comm == "send":
                 soc, message = body
