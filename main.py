@@ -27,11 +27,14 @@ def handle_message(soc, message):
             node_version = payload[:8]
             if node_version != version:
                 return
-            best_height = int(payload[-16:-8], 16)
+            best_height = int(payload[-20:-12], 16)
             nodes[soc.getpeername()].best_height = best_height
             print(nodes[soc.getpeername()].best_height)
-            my_addr = decode_ip(payload[-8:])
+            my_addr = decode_ip(payload[-12:-4])
             print(my_addr)
+            tr_port = int(payload[-4:], 16)
+            nodes[soc.getpeername()].port = tr_port
+            print(tr_port)
             timestamp = int(payload[8:24], 16)
             time_difference = int(int(time()) - timestamp)
             if -300 < time_difference > 300:
@@ -142,6 +145,7 @@ def handle_message(soc, message):
 def send_message(command, soc = None, cargo = None):
     global version
     global nodes
+    global port
     if command == "version" or command == "version1":
         timestamp = hex(int(time()))[2:]
         best_height = hex(blockchain.height)[2:]
@@ -151,7 +155,8 @@ def send_message(command, soc = None, cargo = None):
         else:
             addr_recv = soc.getpeername()[0]
         addr_recv = encode_ip(addr_recv)
-        payload = bytes.fromhex(version + timestamp + best_height + addr_recv)
+        tr_port = fill(hex(port)[2:], 4)
+        payload = bytes.fromhex(version + timestamp + best_height + addr_recv + tr_port)
         payload_lenght = hex(len(payload))[2:]
         header = create_header("version", payload_lenght)
         if command == "version1":
@@ -247,6 +252,9 @@ def decode_ip(ip):
     return addr[:-1]
 
 
+
+
+
 version = "00000001"
 nodes = {}
 expec_blocks = 0
@@ -281,6 +289,7 @@ if c.fetchone()[0] != 1:
 c.execute("SELECT * FROM nodes;")
 if c.fetchall() == []:
     for i in hadcoded_nodes:
+        sent = None
         outbound.put(["connect", [i[0], send_message("version1", cargo=i[1])]])
         while True:
             if not inbound.empty():
@@ -289,20 +298,35 @@ if c.fetchall() == []:
                     break
                 handle_message(soc, message)
             if list(nodes.values()) != []:
-                if list(nodes.values())[0].authorized:
+                if list(nodes.values())[0].authorized and not sent:
                     send_message("only", soc=list(nodes.values())[0].socket, cargo="getheaders")
-
+                    sent = time()
+            if sent:
+                c.execute("SELECT * FROM nodes;")
+                if c.fetchall() != []:
+                    sent = True
+                    break
+                if time() - sent > 30.0:
+                    break
+        outbound.put(["close", soc=list(nodes.values())[0].address])
+        if sent == True:
+            break#treba zatvorit conection
 
 c.execute("SELECT MIN(rowid) FROM nodes;")
 rowid = c.fetchone()[0]
 c.execute("SELECT MAX(rowid) FROM nodes;")
 max_rowid = c.fetchone()[0]
-while rowid <= max_rowid and len(nodes) < opt_nodes:
+while rowid <= max_rowid and len(nodes) < opt_nodes:#treba riesit ako sa budem pripajat ked uz budem popripajany ale sa odpoja
     c.execute("SELECT * FROM blockchain WHERE rowid = (?);", (rowid,))
 
 while True:
+    if len(nodes) < opt_nodes:
+        #connect()
+        pass
     if not inbound.empty():
         soc, message = inbound.get()
+        if message == "error":
+            outbound.put(["close", soc.getpeername()])
         handle_message(soc, message)
     if not mined.empty():
         new_block = mined.get()

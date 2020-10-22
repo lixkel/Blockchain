@@ -62,7 +62,7 @@ def main(nodes, inbound, outbound):
                     if soc == server_socket or soc.getpeername() == skip_soc:
                         continue
                     send_message(soc, tx)
-            elif comm = "close":
+            elif comm == "close":
                 for soc in sockets_list:
                     if soc.getpeername() == body:
                         sockets_list.remove(soc)

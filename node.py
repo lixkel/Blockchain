@@ -5,3 +5,4 @@ class node:
         self.connection = conn
         self.expecting = exp
         self.best_height = 0
+        self.port = self.address[1]
