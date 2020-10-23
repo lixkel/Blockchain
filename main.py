@@ -137,9 +137,11 @@ def handle_message(soc, message):
         for i in range(num_addr):
             node_ip = decode_ip(payload[index:index+8])
             node_port = int(payload[index+8:index+12], 16)
-            index += 12
             print(node_ip, node_port)
-            c.execute("INSERT INTO nodes VALUES (?,?);", (node_ip, node_port))
+            index += 12
+            c.execute("SELECT * FROM nodes WHERE addr = (?) AND port = (?);", (node_ip, node_port))
+            if node_ip != my_addr and node_port != port and c.fetchall() == []:
+                c.execute("INSERT INTO nodes VALUES (?,?);", (node_ip, node_port))
         conn.commit()
 
 
@@ -276,11 +278,11 @@ nodes = {}
 expec_blocks = 0
 opt_nodes = 5
 my_addr = ""
-port = 9999
-default_port = 9999
+port = 55555
+default_port = 55555
 accepting = True
 con_sent = False
-hadcoded_nodes = (("192.168.1.101", 9999),)
+hadcoded_nodes = (("192.168.1.101", 55555),)
 inbound = Queue()
 outbound = Queue()
 to_mine = Queue()
