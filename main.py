@@ -199,7 +199,7 @@ def send_message(command, soc = None, cargo = None):
         if cargo != None:
             payload = bytes.fromhex("0001" + encode_ip(my_addr) + fill(hex(port)[2:], 4))
         else:
-            c.execute("SELECT * FROM nodes;")
+            c.execute("SELECT * FROM nodes ORDER BY RANDOM();")
             if c.fetchall() == []:
                 return
             ls_nodes = c.fetchall()
@@ -256,7 +256,7 @@ def decode_ip(ip):
 
 
 def connect():
-    global nodes, opt_nodes, con_sent
+    global nodes, opt_nodes, con_sent, c
     c.execute("SELECT MIN(rowid) FROM nodes;")
     rowid = c.fetchone()[0]
     c.execute("SELECT MAX(rowid) FROM nodes;")
@@ -264,7 +264,7 @@ def connect():
     node_list = [(i.address[0], i.port) for i in list(nodes.keys())]
     print(node_list)
     while rowid <= max_rowid:#treba riesit ako sa budem pripajat ked uz budem popripajany ale sa odpoja
-        c.execute("SELECT * FROM blockchain WHERE rowid = (?);", (rowid,))
+        c.execute("SELECT * FROM nodes WHERE rowid = (?);", (rowid,))
         line = tuple(c.fetchone())#ako kukat ci uz niesme pripojeny
         if line not in node_list:#vytvorit list nodov a tam checkovat
             outbound.put(["connect", [i[0], send_message("version1", cargo=i[1])]])
@@ -301,23 +301,23 @@ tcli.start()
 
 c.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='blockchain'")
 if c.fetchone()[0] != 1:
-    c.execute("""CREATE TABLE nodes (
-        addr TEXT,
-        port INTEGER)
-        """)
+    c.execute("""CREATE TABLE nodes (
+        addr TEXT,
+        port INTEGER)
+        """)
 
 print("finding nodes...")
 c.execute("SELECT * FROM nodes;")
 if c.fetchall() == []:
-    for i in hadcoded_nodes:
+    for i in hadcoded_nodes:
         sent = None
-        outbound.put(["connect", [i[0], send_message("version1", cargo=i[1])]])
-        while True:
-            if not inbound.empty():
-                soc, message = inbound.get()
-                if message == "error":
-                    break
-                handle_message(soc, message)
+        outbound.put(["connect", [i[0], i[1], send_message("version1", cargo=i[0])]])
+        while True:
+            if not inbound.empty():
+                soc, message = inbound.get()
+                if message == "error":
+                    break
+                handle_message(soc, message)
             if list(nodes.values()) != []:
                 if list(nodes.values())[0].authorized and not sent:
                     send_message("only", soc=list(nodes.values())[0].socket, cargo="getheaders")
@@ -328,7 +328,7 @@ if c.fetchall() == []:
                     break
                 if time() - sent > 30.0:
                     break
-        outbound.put(["close", soc=list(nodes.values())[0].address])
+        outbound.put(["close", list(nodes.values())[0].address])
         c.execute("SELECT * FROM nodes;")
         if len(c.fetchall()) >= 8:
             break#treba zatvorit conection

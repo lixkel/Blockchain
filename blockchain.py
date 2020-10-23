@@ -12,10 +12,10 @@ class Blockchain:
         self.mempool = []
         self.pub_keys = {}
         self.c.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='blockchain'")
-        if c.fetchone()[0] != 1 :
+        if self.c.fetchone()[0] != 1:
             self.c.execute("""CREATE TABLE blockchain (
-                hash text,
-                block text)
+                hash TEXT,
+                block TEXT)
                 """)
             genesis = "000000010000000000000000000000000000000000000000000000000000000000000000801ab3730016697c66969993983e4ad1e4a4fba4044677f678c7b2a1ef8721c400000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff5F402B4000154a8001185374726f6ac3a1726e652073c3ba2075c5be20646f6d61215F44192Bc61e0e6ff566d2f37855ab3974a1a12d916e29f1fc7dc69a4b7c6a3ff62ea7b16e7b43da0ab812702140c2a3e59c4a9edc53e13db80b4091f4b4310ea7e20f7a2d600920457746a9982804e49aff8f50d90cdba6ad8b8b76e3df79fc79a6ff1af2fb07557fb300e250f961c18c7db098e85387388e292cf78dd8ddb784d6636ab754d7da9a675c5b2035dbea64a353666c05a07653fc9df2c1f717fd6cadf181cf962f29534d37466a47d7a368607ca025c1672309f2f69a40bc466111deaace"
             gen_hash = self.hash(genesis[:216])
@@ -25,7 +25,6 @@ class Blockchain:
             keyFile = open("keyFile", "r")
             read = bytes.fromhex(keyFile.read())
             self.key = SigningKey.from_string(read, curve=SECP256k1)
-
         except:
             keyFile = open("keyFile", "w")
             self.key = SigningKey.generate(curve=SECP256k1)
