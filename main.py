@@ -4,6 +4,7 @@ import sqlite3
 import hashlib
 import threading
 from time import time
+from random import randint
 from multiprocessing import Queue, Process
 from ecdsa import SigningKey, VerifyingKey, SECP256k1
 
@@ -137,11 +138,21 @@ def handle_message(soc, message):
         for i in range(num_addr):
             node_ip = decode_ip(payload[index:index+8])
             node_port = int(payload[index+8:index+12], 16)
-            print(node_ip, node_port)
-            index += 12
+            node_timestamp = int(payload[index+12:index+20], 16)
+            print(node_ip, node_port, node_timestamp)
+            index += 20
             c.execute("SELECT * FROM nodes WHERE addr = (?) AND port = (?);", (node_ip, node_port))
             if node_ip != my_addr and node_port != port and c.fetchall() == []:
-                c.execute("INSERT INTO nodes VALUES (?,?);", (node_ip, node_port))
+                c.execute("INSERT INTO nodes VALUES (?,?,?);", (node_ip, node_port, node_timestamp))
+            elif num_addr == 1 and int(time()) - node_timestamp < 600:
+                address = soc.getpeername()
+                while True:
+                    first = randint(0, len(nodes))
+                    second = randint(0, len(nodes))
+                    if first != second and address != list(nodes.values())[first].address and address != list(nodes.values())[second].address:
+                        send_message("addr", soc=list(nodes.values())[first].socket, cargo=payload)
+                        send_message("addr", soc=list(nodes.values())[second].socket, cargo=payload)
+                        break
         conn.commit()
 
 
@@ -196,10 +207,13 @@ def send_message(command, soc = None, cargo = None):
         header = create_header("getheaders", payload_lenght)
         outbound.put(["send", [soc, header + payload]])
     elif command == "addr":
-        if cargo != None:
-            payload = bytes.fromhex("0001" + encode_ip(my_addr) + fill(hex(port)[2:], 4))
+        if cargo == "init":
+            payload = bytes.fromhex("0001" + encode_ip(my_addr) + fill(hex(port)[2:], 4) + hex(int(time()))[2:])
+        elif cargo != None:
+            payload = cargo
         else:
-            c.execute("SELECT * FROM nodes ORDER BY RANDOM();")
+            timestamp = int(time()) - 18000
+            c.execute("SELECT * FROM nodes WHERE timestamp > ?;", ())
             if c.fetchall() == []:
                 return
             ls_nodes = c.fetchall()
@@ -207,13 +221,16 @@ def send_message(command, soc = None, cargo = None):
             payload = ""
             for node in ls_nodes:
                 num_addr += 1
-                payload = encode_ip(node[0]) + fill(hex(node[1])[2:], 4)
+                payload = encode_ip(node[0]) + fill(hex(node[1])[2:], 4) + hex(node[2])[2:]
                 if num_addr == 1000:
                     break
             payload = bytes.fromhex(fill(hex(num_addr)[2:], 4) + payload)
         payload_lenght = hex(len(payload))[2:]
         header = create_header("addr", payload_lenght)
-        outbound.put(["send", [soc, header + payload]])
+        if cargo == "broacast":
+            outbound.put(["broadcast", [soc, header + payload]])
+        else:
+            outbound.put(["send", [soc, header + payload]])
     elif command == "only":
         header = create_header(cargo, "0")
         outbound.put(["send", [soc, header]])
@@ -274,9 +291,11 @@ def connect():
 
 
 version = "00000001"
+stime = int(time())
 nodes = {}
 expec_blocks = 0
 opt_nodes = 5
+num_time = 0
 my_addr = ""
 port = 55555
 default_port = 55555
@@ -304,6 +323,7 @@ if c.fetchone()[0] != 1:
     c.execute("""CREATE TABLE nodes (
         addr TEXT,
         port INTEGER)
+        timestamp INTEGER
         """)
 
 print("finding nodes...")
@@ -355,6 +375,14 @@ while True:
         send_message("broadcast", cargo=["01"+new_block_hash, "headers"])
         block_header, txs = blockchain.build_block()
         to_mine.put([block_header, txs])
+    if int(time()) - stime > 21600:
+        num_time += 1
+        send_message("addr", cargo="broadcast")
+        if num_time == 8:
+            c.execute("DELETE FROM nodes WHERE timestamp<(?)", (stime, ))
+            conn.commit()
+            num_time = 0
+            stime = int(time())
     if not com.empty():
         a, b = com.get()
         if a == "con":
