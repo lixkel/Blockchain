@@ -142,8 +142,11 @@ def handle_message(soc, message):
             print(node_ip, node_port, node_timestamp)
             index += 20
             c.execute("SELECT * FROM nodes WHERE addr = (?) AND port = (?);", (node_ip, node_port))
-            if node_ip != my_addr and node_port != port and c.fetchall() == []:
+            row = c.fetchone()
+            if node_ip != my_addr and node_port != port and row == []:
                 c.execute("INSERT INTO nodes VALUES (?,?,?);", (node_ip, node_port, node_timestamp))
+            elif node_ip != my_addr and node_port != port and row != []:
+                pass
             elif num_addr == 1 and int(time()) - node_timestamp < 600:
                 address = soc.getpeername()
                 while True:
@@ -220,8 +223,10 @@ def send_message(command, soc = None, cargo = None):
             num_addr = 0
             payload = ""
             for node in ls_nodes:
-                num_addr += 1
-                payload = encode_ip(node[0]) + fill(hex(node[1])[2:], 4) + hex(node[2])[2:]
+                peer = soc.getpeername()
+                if node[0] != peer[0] and node[1] != peer[1]:
+                    num_addr += 1
+                    payload = encode_ip(node[0]) + fill(hex(node[1])[2:], 4) + hex(node[2])[2:]
                 if num_addr == 1000:
                     break
             payload = bytes.fromhex(fill(hex(num_addr)[2:], 4) + payload)
@@ -378,11 +383,13 @@ while True:
     if int(time()) - stime > 21600:
         num_time += 1
         send_message("addr", cargo="broadcast")
-        if num_time == 8:
+        c.execute("SELECT MAX(rowid) FROM nodes;")
+        rowid = c.fetchone()[0]
+        if len(nodes) >= 3 and rowid > 1000:
             c.execute("DELETE FROM nodes WHERE timestamp<(?)", (stime, ))
             conn.commit()
             num_time = 0
-            stime = int(time())
+        stime = int(time())
     if not com.empty():
         a, b = com.get()
         if a == "con":
