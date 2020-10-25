@@ -44,15 +44,15 @@ def handle_message(soc, message):
                 send_message("version", nodes[soc.getpeername()].socket)
                 nodes[soc.getpeername()].expecting = "verack"
             else:
-                send_message("verack", nodes[soc.getpeername()].socket)
+                send_message("only", soc=nodes[soc.getpeername()].socket, cargo="verack")
                 nodes[soc.getpeername()].authorized = True
                 nodes[soc.getpeername()].expecting = ""
+                send_message("addr", soc=nodes[soc.getpeername()].socket, cargo="init")
+                send_message("only", soc=list(nodes.values())[0].socket, cargo="getaddr")
     elif command == "verack":
         if nodes[soc.getpeername()].expecting == "verack":
             nodes[soc.getpeername()].authorized = True
             nodes[soc.getpeername()].expecting = ""
-            if accepting:
-                send_message("addr", soc=nodes[soc.getpeername()].socket, cargo="init")
     elif command == "transaction":
         if nodes[soc.getpeername()].authorized == True:
             if blockchain.verify_tx(payload) == True:
@@ -142,13 +142,23 @@ def handle_message(soc, message):
             print(node_ip, node_port, node_timestamp)
             index += 20
             c.execute("SELECT * FROM nodes WHERE addr = (?) AND port = (?);", (node_ip, node_port))
-            row = c.fetchone()
-            if node_ip != my_addr and node_port != port and row == []:
+            query = c.fetchone()
+            if node_ip != my_addr and node_port != port and query == []:
                 c.execute("INSERT INTO nodes VALUES (?,?,?);", (node_ip, node_port, node_timestamp))
-            elif node_ip != my_addr and node_port != port and row != []:
-                pass
+            elif node_ip != my_addr and node_port != port and query != []:
+                if query[3] < node_timestamp:
+                    c.execute("UPDATE nodes timestamp = (?) WHERE addr = (?) AND port = (?);", (node_timestamp, node_ip, node_port))
             elif num_addr == 1 and int(time()) - node_timestamp < 600:
                 address = soc.getpeername()
+                if query != []:
+                    if query[0] == node_ip and query[1] == node_port and query[2] == node_timestamp:
+                        return
+                if len(nodes) =< 1:
+                    return
+                elif len(nodes) == 2:
+                    for i in list(nodes.values()):
+                        if i.address != address:
+                            send_message("addr", soc=i.socket, cargo=payload)
                 while True:
                     first = randint(0, len(nodes))
                     second = randint(0, len(nodes))
@@ -179,9 +189,6 @@ def send_message(command, soc = None, cargo = None):
         if command == "version1":
             return header + payload
         outbound.put(["send", [soc, header + payload]])
-    elif command == "verack":
-        header = create_header(command, "0")
-        outbound.put(["send", [soc, header]])
     elif command == "send":
         msg, pub_key = cargo
         msg = msg.encode("utf-8").hex()
@@ -278,21 +285,17 @@ def decode_ip(ip):
 
 
 def connect():
-    global nodes, opt_nodes, con_sent, c
-    c.execute("SELECT MIN(rowid) FROM nodes;")
-    rowid = c.fetchone()[0]
-    c.execute("SELECT MAX(rowid) FROM nodes;")
-    max_rowid = c.fetchone()[0]
+    global nodes, con_sent, c
     node_list = [(i.address[0], i.port) for i in list(nodes.keys())]
     print(node_list)
-    while rowid <= max_rowid:#treba riesit ako sa budem pripajat ked uz budem popripajany ale sa odpoja
-        c.execute("SELECT * FROM nodes WHERE rowid = (?);", (rowid,))
-        line = tuple(c.fetchone())#ako kukat ci uz niesme pripojeny
+    while True:
+        c.execute("SELECT * FROM table ORDER BY RANDOM() LIMIT 1")
+        query = c.fetchone()#bude cakat kym dostanem addr od con aby som dostal nove adresy!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        line = tuple(query[0], query[1])
         if line not in node_list:#vytvorit list nodov a tam checkovat
             outbound.put(["connect", [i[0], send_message("version1", cargo=i[1])]])
             con_sent = True
             break
-        rowid += 1
 
 
 version = "00000001"
@@ -304,7 +307,6 @@ num_time = 0
 my_addr = ""
 port = 55555
 default_port = 55555
-accepting = True
 con_sent = False
 hadcoded_nodes = (("192.168.1.101", 55555),)
 inbound = Queue()
@@ -337,22 +339,17 @@ if c.fetchall() == []:
     for i in hadcoded_nodes:
         sent = None
         outbound.put(["connect", [i[0], i[1], send_message("version1", cargo=i[0])]])
+        started = int(time())
         while True:
             if not inbound.empty():
                 soc, message = inbound.get()
                 if message == "error":
                     break
                 handle_message(soc, message)
-            if list(nodes.values()) != []:
-                if list(nodes.values())[0].authorized and not sent:
-                    send_message("only", soc=list(nodes.values())[0].socket, cargo="getheaders")
-                    sent = time()
-            if sent:
-                c.execute("SELECT * FROM nodes;")
-                if c.fetchall() != []:
+                if message = "00000000006765746164647200000000":
                     break
-                if time() - sent > 30.0:
-                    break
+            if int(time()) - started > 120:
+                break
         outbound.put(["close", list(nodes.values())[0].address])
         c.execute("SELECT * FROM nodes;")
         if len(c.fetchall()) >= 8:
