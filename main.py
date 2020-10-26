@@ -19,7 +19,7 @@ def handle_message(soc, message):
     global nodes
     global sync
     global expec_blocks
-    global my_addr
+    global my_addr, con_sent
     command = bytes.fromhex(message[:24].lstrip("0")).decode("utf-8")
     payload = message[32:]
     print(command)
@@ -40,7 +40,7 @@ def handle_message(soc, message):
             time_difference = int(int(time()) - timestamp)
             if -300 < time_difference > 300:
                 return
-            if nodes[soc.getpeername()].connection == "inbound":
+            if nodes[soc.getpeername()].inbound:
                 send_message("version", nodes[soc.getpeername()].socket)
                 nodes[soc.getpeername()].expecting = "verack"
             else:
@@ -62,6 +62,8 @@ def handle_message(soc, message):
                     send_message("broadcast", soc=soc.getpeername(), cargo=[payload, "transaction"])
                 else:
                     pass
+        else:
+            ban_check(soc.getpeername())
     elif command == "headers":
         if payload == "00":
             sync = True
@@ -134,6 +136,8 @@ def handle_message(soc, message):
         num_addr = int(payload[:4], 16)
         if num_addr > 1000:
             return
+        elif num_addr > 1:
+            con_sent = False
         index = 4
         for i in range(num_addr):
             node_ip = decode_ip(payload[index:index+8])
@@ -167,6 +171,10 @@ def handle_message(soc, message):
                         send_message("addr", soc=list(nodes.values())[second].socket, cargo=payload)
                         break
         conn.commit()
+    elif comm == "active":
+        pass
+    else:
+        ban_check(soc.getpeername())
 
 
 def send_message(command, soc = None, cargo = None):
@@ -284,6 +292,12 @@ def decode_ip(ip):
     return addr[:-1]
 
 
+def ban_check(address):
+    nodes[address].banscore += 1
+    if nodes[address].banscore >= 10:
+        outbound.put(["close", list(nodes[address].address])
+
+
 def connect():
     global nodes, con_sent, c
     node_list = [(i.address[0], i.port) for i in list(nodes.keys())]
@@ -292,7 +306,7 @@ def connect():
         c.execute("SELECT * FROM table ORDER BY RANDOM() LIMIT 1")
         query = c.fetchone()#bude cakat kym dostanem addr od con aby som dostal nove adresy!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         line = tuple(query[0], query[1])
-        if line not in node_list:#vytvorit list nodov a tam checkovat
+        if line not in node_list:
             outbound.put(["connect", [i[0], send_message("version1", cargo=i[1])]])
             con_sent = True
             break
@@ -346,7 +360,7 @@ if c.fetchall() == []:
                 if message == "error":
                     break
                 handle_message(soc, message)
-                if message = "00000000006765746164647200000000":
+                if message == "00000000006765746164647200000000":
                     break
             if int(time()) - started > 120:
                 break
@@ -367,6 +381,7 @@ while True:
         if message == "error":
             c.execute("DELETE FROM nodes WHERE addr=(?) AND port=(?)", (soc[1], soc[2]))
             conn.commit()
+            con_sent = False
         else:
             handle_message(soc, message)
     if not mined.empty():
@@ -377,16 +392,24 @@ while True:
         send_message("broadcast", cargo=["01"+new_block_hash, "headers"])
         block_header, txs = blockchain.build_block()
         to_mine.put([block_header, txs])
-    if int(time()) - stime > 21600:
+    if int(time()) - stime > 1800:
         num_time += 1
-        send_message("addr", cargo="broadcast")
-        c.execute("SELECT MAX(rowid) FROM nodes;")
-        rowid = c.fetchone()[0]
-        if len(nodes) >= 3 and rowid > 1000:
-            c.execute("DELETE FROM nodes WHERE timestamp<(?)", (stime, ))
-            conn.commit()
-            num_time = 0
-        stime = int(time())
+        current_time = int(time())
+        for i in list(nodes.values()):
+            c.execute("UPDATE nodes timestamp = (?) WHERE addr = (?) AND port = (?);", (i.lastrecv, i.address[0], i.address[1]))
+            if current_time - i.lastsend < 1800:
+                send_message("only", soc=nodes[soc.getpeername()].socket, cargo="active")
+            if current_time - i.lastrecv < 5400:
+                outbound.put(["close", i.address])
+        if num_time == 48:
+            send_message("addr", cargo="broadcast")
+            c.execute("SELECT MAX(rowid) FROM nodes;")
+            rowid = c.fetchone()[0]
+            if len(nodes) >= 3 and rowid > 1000:
+                c.execute("DELETE FROM nodes WHERE timestamp<(?)", (stime, ))
+                num_time = 0
+            stime = int(time())
+        conn.commit()
     if not com.empty():
         a, b = com.get()
         if a == "con":

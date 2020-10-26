@@ -35,3 +35,6 @@ addr:
 
 getaddr:
 nothing
+
+active:
+nothing
