@@ -154,33 +154,37 @@ def handle_message(soc, message):
             index += 20
             c.execute("SELECT * FROM nodes WHERE addr = (?) AND port = (?);", (node_ip, node_port))
             query = c.fetchone()
-            if node_ip != my_addr and node_port != port and query == []:
+            if node_ip != my_addr and node_port != port and query == None:
                 c.execute("INSERT INTO nodes VALUES (?,?,?);", (node_ip, node_port, node_timestamp))
-            elif node_ip != my_addr and node_port != port and query != []:
+            elif node_ip != my_addr and node_port != port and query != None:
                 if query[3] < node_timestamp:
                     c.execute("UPDATE nodes timestamp = (?) WHERE addr = (?) AND port = (?);", (node_timestamp, node_ip, node_port))
             elif num_addr == 1 and int(time()) - node_timestamp < 600:
+                break
                 address = soc.getpeername()
-                if query != []:
-                    if query[0] == node_ip and query[1] == node_port and query[2] == node_timestamp:
-                        return
-                if len(nodes) =< 1:
-                    return
+                if query != None:
+                    if query[0] == node_ip and query[1] == node_port and query[2] == node_timestamp  and node_ip != my_addr and node_port != port:
+                        break
+                if len(nodes) <= 1:
+                    break
                 elif len(nodes) == 2:
                     for i in list(nodes.values()):
                         if i.address != address:
                             send_message("addr", soc=i.socket, cargo=payload)
+                    break
                 while True:
-                    first = randint(0, len(nodes))
-                    second = randint(0, len(nodes))
+                    print("loop addr preposielanie")
+                    first = randint(0, len(nodes)-1)
+                    second = randint(0, len(nodes)-1)
                     if first != second and address != list(nodes.values())[first].address and address != list(nodes.values())[second].address:
                         send_message("addr", soc=list(nodes.values())[first].socket, cargo=payload)
                         send_message("addr", soc=list(nodes.values())[second].socket, cargo=payload)
                         break
         conn.commit()
-    elif comm == "active":
+    elif command == "active":
         pass
     else:
+        print("toto by sa nemalo stavat")
         ban_check(soc.getpeername())
 
 
@@ -235,7 +239,7 @@ def send_message(command, soc = None, cargo = None):
         if cargo == "init":
             payload = bytes.fromhex("0001" + encode_ip(my_addr) + fill(hex(port)[2:], 4) + hex(int(time()))[2:])
         elif cargo != None:
-            payload = cargo
+            payload = bytes.fromhex(cargo)
         else:
             timestamp = int(time()) - 18000
             c.execute("SELECT * FROM nodes WHERE timestamp > ?;", ())
@@ -302,17 +306,22 @@ def decode_ip(ip):
 def ban_check(address):
     nodes[address].banscore += 1
     if nodes[address].banscore >= 10:
-        outbound.put(["close", list(nodes[address].address])
+        c.execute("DELETE FROM nodes WHERE addr=(?) AND port=(?)", (address[0], address[1]))
+        outbound.put(["close", address])
         ban_list.append(address)
 
 
 def connect():
+    print("som v connect")
     global nodes, con_sent, c
-    node_list = [(i.address[0], i.port) for i in list(nodes.keys())]
+    node_list = [(i.address[0], i.port) for i in list(nodes.values())]
     print(node_list)
     while True:
-        c.execute("SELECT * FROM table ORDER BY RANDOM() LIMIT 1")
+        c.execute("SELECT * FROM nodes ORDER BY RANDOM() LIMIT 1")
         query = c.fetchone()#bude cakat kym dostanem addr od con aby som dostal nove adresy!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        if query == None:
+            print("query prazdna")
+            break
         line = tuple(query[0], query[1])
         if line not in node_list and line not in ban_list:
             outbound.put(["connect", [i[0], send_message("version1", cargo=i[1])]])
@@ -343,12 +352,12 @@ sync = True
 conn = sqlite3.connect("nodes.db")
 c = conn.cursor()
 blockchain = Blockchain(version,prnt)
-local_node = threading.Thread(target=p2p.start_node, args=(port, nodes, inbound, outbound. ban_list))
+local_node = threading.Thread(target=p2p.start_node, args=(port, nodes, inbound, outbound, ban_list))
 local_node.start()
 tcli = threading.Thread(target=cli, args=(com, display, prnt))
 tcli.start()
 
-c.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='blockchain'")
+c.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='nodes'")
 if c.fetchone()[0] != 1:
     c.execute("""CREATE TABLE nodes (
         addr TEXT,

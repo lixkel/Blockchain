@@ -36,7 +36,7 @@ def main(nodes, inbound, outbound, ban_list):
                     del nodes[soc.getpeername()]
                 else:
                     if new_message != "error":
-                        nodes[soc.getpeername].lastrecv = int(time())
+                        nodes[soc.getpeername()].lastrecv = int(time())
                     inbound.put([soc, new_message])
 
         for exception in exception_sockets:
@@ -50,22 +50,22 @@ def main(nodes, inbound, outbound, ban_list):
                 new_soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 try:
                     new_soc.connect((addr, port))
-                    new_node = node((new_soc, new_soc.getpeername()), False, "version")
+                    new_node = node((new_soc, new_soc.getpeername()), False, "version", int(time()))
                     sockets_list.append(new_node.socket)
                     nodes[new_node.address] = new_node
-                    send_message(new_node.socket, vers)
+                    send_message(new_node.socket, vers, nodes)
                 except socket.error as e:
                     inbound.put([(addr, port), "error"])
                     print(f"Address-related error connecting to server: {e}")
             elif comm == "send":
                 soc, message = body
-                send_message(soc, message)
+                send_message(soc, message, nodes)
             elif comm == "broadcast":
                 skip_soc, tx = body
                 for soc in sockets_list:
                     if soc == server_socket or soc.getpeername() == skip_soc:
                         continue
-                    send_message(soc, tx)
+                    send_message(soc, tx, nodes)
             elif comm == "close":
                 for soc in sockets_list:
                     if soc.getpeername() == body:
@@ -78,11 +78,11 @@ def main(nodes, inbound, outbound, ban_list):
                 break
 
 
-def send_message(soc, message):
-    global socket, nodes, time
+def send_message(soc, message, nodes):
+    global socket, time
     try:
         soc.send(message)
-        nodes[soc.getpeername].lastsend = int(time())
+        nodes[soc.getpeername()].lastsend = int(time())
     except socket.error as e:
         print(f"Error sending data: {e}")
 
