@@ -53,6 +53,8 @@ def handle_message(soc, message):
         if nodes[soc.getpeername()].expecting == "verack":
             nodes[soc.getpeername()].authorized = True
             nodes[soc.getpeername()].expecting = ""
+        else:
+            ban_check(soc.getpeername())
     elif command == "transaction":
         if nodes[soc.getpeername()].authorized == True:
             if blockchain.verify_tx(payload) == True:
@@ -62,6 +64,8 @@ def handle_message(soc, message):
                     send_message("broadcast", soc=soc.getpeername(), cargo=[payload, "transaction"])
                 else:
                     pass
+            else:
+                ban_check(soc.getpeername())
         else:
             ban_check(soc.getpeername())
     elif command == "headers":
@@ -99,6 +103,8 @@ def handle_message(soc, message):
         expec_blocks -= 1
         if blockchain.verify_block(payload):
             blockchain.append(payload)
+        else:
+            ban_check(soc.getpeername())
         if sync == False and expec_blocks == 0:
             send_message("sync", soc=soc)
     elif command == "getheaders":
@@ -135,6 +141,7 @@ def handle_message(soc, message):
     elif command == "addr":
         num_addr = int(payload[:4], 16)
         if num_addr > 1000:
+            ban_check(soc.getpeername())
             return
         elif num_addr > 1:
             con_sent = False
@@ -296,6 +303,7 @@ def ban_check(address):
     nodes[address].banscore += 1
     if nodes[address].banscore >= 10:
         outbound.put(["close", list(nodes[address].address])
+        ban_list.append(address)
 
 
 def connect():
@@ -306,7 +314,7 @@ def connect():
         c.execute("SELECT * FROM table ORDER BY RANDOM() LIMIT 1")
         query = c.fetchone()#bude cakat kym dostanem addr od con aby som dostal nove adresy!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         line = tuple(query[0], query[1])
-        if line not in node_list:
+        if line not in node_list and line not in ban_list:
             outbound.put(["connect", [i[0], send_message("version1", cargo=i[1])]])
             con_sent = True
             break
@@ -330,11 +338,12 @@ mined = Queue()
 com = Queue()
 prnt = Queue()
 display = Queue()
+ban_list = []
 sync = True
 conn = sqlite3.connect("nodes.db")
 c = conn.cursor()
 blockchain = Blockchain(version,prnt)
-local_node = threading.Thread(target=p2p.start_node, args=(port, nodes, inbound, outbound))
+local_node = threading.Thread(target=p2p.start_node, args=(port, nodes, inbound, outbound. ban_list))
 local_node.start()
 tcli = threading.Thread(target=cli, args=(com, display, prnt))
 tcli.start()

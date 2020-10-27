@@ -1,4 +1,4 @@
-def start_node(port, nodes, inbound, outbound):
+def start_node(port, nodes, inbound, outbound, ban_list):
     import socket
     from time import time
     global socket, time
@@ -11,10 +11,10 @@ def start_node(port, nodes, inbound, outbound):
     server_socket.setblocking(0)
     bind_socket(host, port)
     sockets_list = [server_socket]
-    main(nodes, inbound, outbound)
+    main(nodes, inbound, outbound, ban_list)
 
 
-def main(nodes, inbound, outbound):
+def main(nodes, inbound, outbound, ban_list):
     import select
     from node import node
     global socket, time
@@ -25,9 +25,10 @@ def main(nodes, inbound, outbound):
         for soc in read_sockets:
             if soc == server_socket:
                 new_soc = server_socket.accept()
-                new_node = node(new_soc, True, "version", int(time()))
-                sockets_list.append(new_node.socket)
-                nodes[new_node.address] = new_node
+                if new_soc[1] not in ban_list:
+                    new_node = node(new_soc, True, "version", int(time()))
+                    sockets_list.append(new_node.socket)
+                    nodes[new_node.address] = new_node
             else:
                 new_message = receive_message(soc)
                 if not new_message:

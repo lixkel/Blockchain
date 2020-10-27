@@ -8,3 +8,4 @@ class node:
         self.port = self.address[1]
         self.lastrecv = timestamp
         self.lastsend = timestamp
+        self.banscore = 0
