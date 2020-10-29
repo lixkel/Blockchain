@@ -464,17 +464,17 @@ while True:
     if not com.empty():
         a, b = com.get()
         if a == "con":
-            b, c = b
-            outbound.put(["connect", [b, c, send_message("version1", cargo=b)]])
+            b, d = b
+            outbound.put(["connect", [b, d, send_message("version1", cargo=b)]])
         elif a == "send":
-            b,c = b
+            b,d = b
             if b == "":
                 display.put(list(blockchain.pub_keys.values()))
             else:
-                cargo = [c, list(blockchain.pub_keys.keys())[b]]
+                cargo = [d, list(blockchain.pub_keys.keys())[b]]
                 send_message("send", cargo=cargo)
         elif a == "import":
-            b, c = b
+            b, d = b
             blockchain.save_key(b, c)
         elif a == "export":
             display.put(blockchain.ver_key_str)

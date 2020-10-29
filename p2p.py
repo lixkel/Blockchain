@@ -49,7 +49,9 @@ def main(nodes, inbound, outbound, ban_list):
                 addr, port, vers = body
                 new_soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 try:
+                    new_soc.settimeout(10)
                     new_soc.connect((addr, port))
+                    new_soc.settimeout(None)
                     new_node = node((new_soc, new_soc.getpeername()), False, "version", int(time()))
                     sockets_list.append(new_node.socket)
                     nodes[new_node.address] = new_node
