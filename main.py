@@ -49,10 +49,12 @@ def handle_message(soc, message):
                 nodes[soc.getpeername()].expecting = ""
                 send_message("addr", soc=nodes[soc.getpeername()].socket, cargo="init")
                 send_message("only", soc=list(nodes.values())[0].socket, cargo="getaddr")
+                send_message("sync", soc=soc)
     elif command == "verack":
         if nodes[soc.getpeername()].expecting == "verack":
             nodes[soc.getpeername()].authorized = True
             nodes[soc.getpeername()].expecting = ""
+            send_message("sync", soc=soc)
         else:
             ban_check(soc.getpeername())
     elif command == "transaction":
@@ -113,7 +115,11 @@ def handle_message(soc, message):
             stop_hash = payload[64:]
             blockchain.c.execute("SELECT rowid FROM blockchain WHERE hash = (?);", (start_hash,))
             rowid = blockchain.c.fetchone()[0]
-            if rowid:
+            blockchain.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+            max_rowid = blockchain.c.fetchone()[0]
+            print(f"rowid: {rowid}")
+            print(f"maxrowid: {max_rowid}")
+            if rowid and rowid != max_rowid:
                 new_message = ""
                 for i in range(255):#toto bude este treba fixnut ked to bude nad 255
                     rowid += 1
@@ -136,7 +142,8 @@ def handle_message(soc, message):
                             new_message = header_num + new_message
                             send_message("broadcast", cargo=[new_message, "headers"])
                             break
-    elif command == "getheader":
+    elif command == "getaddr":
+        print("som v getaddr")
         send_message("addr", soc=soc)
     elif command == "addr":
         num_addr = int(payload[:4], 16)
@@ -151,19 +158,26 @@ def handle_message(soc, message):
             node_port = int(payload[index+8:index+12], 16)
             node_timestamp = int(payload[index+12:index+20], 16)
             print(node_ip, node_port, node_timestamp)
+            print(my_addr, port)
+            if node_ip == "127.0.0.1" or node_ip == "0.0.0.0":
+                return
             index += 20
             c.execute("SELECT * FROM nodes WHERE addr = (?) AND port = (?);", (node_ip, node_port))
             query = c.fetchone()
-            if node_ip != my_addr and node_port != port and query == None:
+            print(f"query {query}")
+            if (node_ip != my_addr or node_port != port) and query == None:
+                print("toto by sa malo stat")
                 c.execute("INSERT INTO nodes VALUES (?,?,?);", (node_ip, node_port, node_timestamp))
-            elif node_ip != my_addr and node_port != port and query != None:
-                if query[3] < node_timestamp:
-                    c.execute("UPDATE nodes timestamp = (?) WHERE addr = (?) AND port = (?);", (node_timestamp, node_ip, node_port))
-            elif num_addr == 1 and int(time()) - node_timestamp < 600:
-                break
+            elif (node_ip != my_addr or node_port != port) and query != None:
+                print("toto by sa nemalo stat")
+                if query[2] < node_timestamp:
+                    c.execute("UPDATE nodes SET timestamp = (?) WHERE addr = (?) AND port = (?);", (node_timestamp, node_ip, node_port))
+            print(routable(node_ip))
+            if num_addr == 1 and int(time()) - node_timestamp < 600 and (node_ip != my_addr or node_port != port) and routable(node_ip):
+                print("toto by sa tiez malo stat")
                 address = soc.getpeername()
                 if query != None:
-                    if query[0] == node_ip and query[1] == node_port and query[2] == node_timestamp  and node_ip != my_addr and node_port != port:
+                    if query[0] == node_ip and query[1] == node_port and query[2] == node_timestamp:
                         break
                 if len(nodes) <= 1:
                     break
@@ -218,6 +232,7 @@ def send_message(command, soc = None, cargo = None):
         outbound.put(["broadcast", [soc, header + payload]])
     elif command == "broadcast":
         payload, type = cargo
+        print(f"payload broadcast: {payload}")
         payload = bytes.fromhex(payload)
         payload_lenght = hex(len(payload))[2:]
         header = create_header(type, payload_lenght)
@@ -242,10 +257,10 @@ def send_message(command, soc = None, cargo = None):
             payload = bytes.fromhex(cargo)
         else:
             timestamp = int(time()) - 18000
-            c.execute("SELECT * FROM nodes WHERE timestamp > ?;", ())
-            if c.fetchall() == []:
-                return
+            c.execute("SELECT * FROM nodes WHERE timestamp > ?;", (timestamp,))
             ls_nodes = c.fetchall()
+            if ls_nodes == []:
+                return
             num_addr = 0
             payload = ""
             for node in ls_nodes:
@@ -311,22 +326,32 @@ def ban_check(address):
         ban_list.append(address)
 
 
+def routable(ip):
+    if ip == "0.0.0.0":
+        return False
+    elif ip == "127.0.0.1":
+        return False
+    ip_split = [int(i) for i in ip.split(".")]
+    if ip_split[0] == 10:
+        return False
+    elif ip_split[0] == 192 and ip_split[1] == 168:
+        return False
+    elif ip_split[0] == 176 and 16 <= ip_split[1] <= 31:
+        return False
+    return True
+
+
 def connect():
-    print("som v connect")
     global nodes, con_sent, c
     node_list = [(i.address[0], i.port) for i in list(nodes.values())]
-    print(node_list)
-    while True:
-        c.execute("SELECT * FROM nodes ORDER BY RANDOM() LIMIT 1")
-        query = c.fetchone()#bude cakat kym dostanem addr od con aby som dostal nove adresy!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        if query == None:
-            print("query prazdna")
-            break
-        line = tuple(query[0], query[1])
-        if line not in node_list and line not in ban_list:
-            outbound.put(["connect", [i[0], send_message("version1", cargo=i[1])]])
-            con_sent = True
-            break
+    c.execute("SELECT * FROM nodes ORDER BY RANDOM() LIMIT 1")
+    query = c.fetchone()#bude cakat kym dostanem addr od con aby som dostal nove adresy!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    if query == None:
+        return
+    line = (query[0], query[1])
+    if line not in node_list and line not in ban_list:
+        outbound.put(["connect", [line[0], line[1], send_message("version1", cargo=line[0])]])
+        con_sent = True
 
 
 version = "00000001"
@@ -336,6 +361,7 @@ expec_blocks = 0
 opt_nodes = 5
 num_time = 0
 my_addr = ""
+prev_time = int(time())
 port = 55555
 default_port = 55555
 con_sent = False
@@ -354,15 +380,13 @@ c = conn.cursor()
 blockchain = Blockchain(version,prnt)
 local_node = threading.Thread(target=p2p.start_node, args=(port, nodes, inbound, outbound, ban_list))
 local_node.start()
-tcli = threading.Thread(target=cli, args=(com, display, prnt))
-tcli.start()
 
 c.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='nodes'")
 if c.fetchone()[0] != 1:
     c.execute("""CREATE TABLE nodes (
         addr TEXT,
-        port INTEGER)
-        timestamp INTEGER
+        port INTEGER,
+        timestamp INTEGER)
         """)
 
 print("finding nodes...")
@@ -376,11 +400,14 @@ if c.fetchall() == []:
             if not inbound.empty():
                 soc, message = inbound.get()
                 if message == "error":
+                    print("error")
                     break
                 handle_message(soc, message)
-                if message == "00000000006765746164647200000000":
+                if message[:24] == "000000000000000061646472":
+                    print("msg je addr")
                     break
-            if int(time()) - started > 120:
+            if int(time()) - started > 10:
+                print("prekroceny cas")
                 break
         outbound.put(["close", list(nodes.values())[0].address])
         c.execute("SELECT * FROM nodes;")
@@ -388,16 +415,22 @@ if c.fetchall() == []:
             break#treba zatvorit conection
 print("connecting...")
 
+tcli = threading.Thread(target=cli, args=(com, display, prnt))
+tcli.start()
+
 while True:
     if len(nodes) < opt_nodes:
-        if len(nodes) == 0:
+        if len(nodes) == 0 and int(time()) % 5 == 0 and int(time()) != prev_time:
+            prev_time = int(time())
+            c.execute("SELECT * FROM nodes;")
+            print(c.fetchall())
             print("connecting...")
         if not con_sent:
             connect()#mozno by bolo lepsie spravit init connect v loope pred tymto
     if not inbound.empty():
         soc, message = inbound.get()
         if message == "error":
-            c.execute("DELETE FROM nodes WHERE addr=(?) AND port=(?)", (soc[1], soc[2]))
+            c.execute("DELETE FROM nodes WHERE addr=(?) AND port=(?)", (soc[0], soc[1]))
             conn.commit()
             con_sent = False
         else:

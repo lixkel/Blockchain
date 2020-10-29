@@ -68,12 +68,16 @@ def main(nodes, inbound, outbound, ban_list):
                     send_message(soc, tx, nodes)
             elif comm == "close":
                 for soc in sockets_list:
+                    if soc == server_socket:
+                        continue
                     if soc.getpeername() == body:
+                        send_message(soc, b"close", nodes)
                         sockets_list.remove(soc)
                         del nodes[soc.getpeername()]
                         soc.close()
             elif comm == "end":
                 for soc in sockets_list:
+                    send_message(soc, b"close", nodes)
                     soc.close()
                 break
 
@@ -103,7 +107,7 @@ def receive_message(soc):
     global socket
     try:
         message_header = soc.recv(16)
-        if message_header == b"":
+        if message_header == b"" or message_header == b"close":
             return False
         message_header = message_header.hex()
         payload_lenght = int(message_header[24:], 16)
