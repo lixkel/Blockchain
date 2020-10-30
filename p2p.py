@@ -61,7 +61,9 @@ def main(nodes, inbound, outbound, ban_list):
                     print(f"Address-related error connecting to server: {e}")
             elif comm == "send":
                 soc, message = body
-                send_message(soc, message, nodes)
+                suc_send = send_message(soc, message, nodes)
+                if not suc_send:
+                    outbound.put(["close", soc.getpeername()])
             elif comm == "broadcast":
                 skip_soc, tx = body
                 for soc in sockets_list:
@@ -87,8 +89,14 @@ def main(nodes, inbound, outbound, ban_list):
 def send_message(soc, message, nodes):
     global socket, time
     try:
-        soc.send(message)
+        totalsent = 0
+        while totalsent < len(message):
+            sent = soc.send(message[totalsent:])
+            if sent == 0:
+                return False
+            totalsent = totalsent + sent
         nodes[soc.getpeername()].lastsend = int(time())
+        return True
     except socket.error as e:
         print(f"Error sending data: {e}")
 
