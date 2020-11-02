@@ -28,6 +28,8 @@ def handle_message(soc, message):
             node_version = payload[:8]
             if node_version != version:
                 return
+            if int(node_version, 16) > int(version, 16):
+                print("vyzera to ze mas zastaralu verziu")
             best_height = int(payload[-20:-12], 16)
             nodes[soc.getpeername()].best_height = best_height
             print(nodes[soc.getpeername()].best_height)
@@ -115,6 +117,7 @@ def handle_message(soc, message):
             stop_hash = payload[64:]
             blockchain.c.execute("SELECT rowid FROM blockchain WHERE hash = (?);", (start_hash,))
             rowid = blockchain.c.fetchone()[0]
+            print(rowid)
             blockchain.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
             max_rowid = blockchain.c.fetchone()[0]
             print(f"rowid: {rowid}")
@@ -142,11 +145,14 @@ def handle_message(soc, message):
                             new_message = header_num + new_message
                             send_message("broadcast", cargo=[new_message, "headers"])
                             break
+        else:
+            ban_check(soc.getpeername())
     elif command == "getaddr":
         print("som v getaddr")
         send_message("addr", soc=soc)
     elif command == "addr":
         num_addr = int(payload[:4], 16)
+        print(f"num addr je: {num_addr}")
         if num_addr > 1000:
             ban_check(soc.getpeername())
             return
@@ -159,6 +165,9 @@ def handle_message(soc, message):
             node_timestamp = int(payload[index+12:index+20], 16)
             print(node_ip, node_port, node_timestamp)
             print(my_addr, port)
+            if (node_ip, node_port) in hadcoded_nodes:
+                print("som tam jebo")
+                continue
             if node_ip == "127.0.0.1" or node_ip == "0.0.0.0":
                 return
             index += 20
@@ -259,6 +268,7 @@ def send_message(command, soc = None, cargo = None):
             timestamp = int(time()) - 18000
             c.execute("SELECT * FROM nodes WHERE timestamp > ?;", (timestamp,))
             ls_nodes = c.fetchall()
+            print(f"ls_nodes: {ls_nodes}")
             if ls_nodes == []:
                 return
             num_addr = 0
@@ -268,6 +278,8 @@ def send_message(command, soc = None, cargo = None):
                 if node[0] != peer[0] and node[1] != peer[1]:
                     num_addr += 1
                     payload = encode_ip(node[0]) + fill(hex(node[1])[2:], 4) + hex(node[2])[2:]
+                elif len(ls_nodes) == 1:
+                    return
                 if num_addr == 1000:
                     break
             payload = bytes.fromhex(fill(hex(num_addr)[2:], 4) + payload)
@@ -406,10 +418,11 @@ if c.fetchall() == []:
                 if message[:24] == "000000000000000061646472":
                     print("msg je addr")
                     break
-            if int(time()) - started > 10:
+            if int(time()) - started > 15:
                 print("prekroceny cas")
                 break
-        outbound.put(["close", list(nodes.values())[0].address])
+        if len(nodes) != 0:
+            outbound.put(["close", list(nodes.values())[0].address])
         c.execute("SELECT * FROM nodes;")
         if len(c.fetchall()) >= 8:
             break#treba zatvorit conection

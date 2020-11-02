@@ -81,7 +81,8 @@ def main(nodes, inbound, outbound, ban_list):
                         soc.close()
             elif comm == "end":
                 for soc in sockets_list:
-                    send_message(soc, b"close", nodes)
+                    if soc != server_socket:
+                        send_message(soc, b"close", nodes)
                     soc.close()
                 break
 
