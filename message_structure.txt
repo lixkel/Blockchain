@@ -13,7 +13,9 @@ version:
 2 - port of transmitter
 
 getheaders:
-32 - starting hash
+32 - chainwork
+1 - num of hashes
+32x - block hashes
 32 - stopping hash
 
 headers:

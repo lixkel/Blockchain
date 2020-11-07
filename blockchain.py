@@ -11,6 +11,7 @@ class Blockchain:
         self.c = self.conn.cursor()
         self.mempool = []
         self.pub_keys = {}
+        self.orphans = {}
         self.c.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='blockchain'")
         if self.c.fetchone()[0] != 1:
             self.c.execute("""CREATE TABLE blockchain (
@@ -47,17 +48,27 @@ class Blockchain:
         self.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
         self.target = self.c.fetchone()[1][136:200]
         print(self.target)
-
+        try:
+            save_file = open("save", "r")
+            self.chainwork = int(bytes.fromhex(keyFile.read()))
+        except FileNotFoundError and ValueError:
+            if 'save_file' in locals():
+                save_file.close()
+            save_file = open("save", "w")
+            c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+            max_rowid = c.fetchone()[0]
+            if max_rowid == 0:
+                return
+            self.chainwork = 0
+            for i in range(2, max_rowid+1):
+                self.c.execute("SELECT block FROM blockchain WHERE rowid = (?);", (i,))
+                block = self.c.fetchone()[0]
+                target = block[136:200]
+                self.chainwork += int(2**256/int(target, 16))
+            save_file.write(str(self.chainwork))
 
 
     def verify_block(self, block):
-        self.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
-        previous_block = self.c.fetchone()[0]
-        if block[8:72] != previous_block:
-            return False
-        block_target = block[136:200]
-        if block_target != self.target:
-            return False
         block_target = int(block_target, 16)
         header_hash = self.hash(block[:216])
         if not int(header_hash, 16) <= block_target:
@@ -180,12 +191,26 @@ class Blockchain:
 
 
     def append(self, new_block):
+        self.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+        previous_block = self.c.fetchone()[0]
+        if new_block[8:72] != previous_block:
+            block_hash = self.hash(new_block)
+            self.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (block_hash,))
+            in_blockchain = self.c.fetchone()
+            if not in_blockchain:
+                self.orphans[new_block[8:72]] = new_block
+                return "oprhan"
+        block_target = block[136:200]
+        if block_target != self.target:
+            return False
         new_block_hash = self.hash(new_block[:216])
         self.c.execute("INSERT INTO blockchain VALUES (?,?);", (new_block_hash, new_block))
         self.conn.commit()
         self.height += 1
+        self.chainwork += int(2**256/int(block_target, 16))
         if self.height % 10 == 0:
             self.calc_target()
+        return True
 
 
     def calc_target(self):
@@ -209,3 +234,20 @@ class Blockchain:
         self.target = new_target
         print(change)
         print(self.target)
+
+
+    def check_orphans(self):
+        self.c.execute("SELECT hash FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+        top_hash = self.c.fetchone()[0]
+        new = []
+        try:
+            orphan = self.orphans[top_hash]
+            if self.append(orphan):
+                del self.orphans[top_hash]
+                new.append(orphan)
+                for i in self.check_orphans():
+                    new.append(orphan)
+                return new
+        except KeyError:
+            pass
+        return []

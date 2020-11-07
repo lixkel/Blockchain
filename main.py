@@ -107,16 +107,34 @@ def handle_message(soc, message):
         print(f"new block: {payload}")
         expec_blocks -= 1
         if blockchain.verify_block(payload):
-            blockchain.append(payload)
+            appended = blockchain.append(payload)
+            if appended = "orphan":
+                return
+            elif appended:
+                orphans = blockchain.check_orphans()
+            else:
+                ban_check(soc.getpeername())
+                return
         else:
             ban_check(soc.getpeername())
         if sync == False and expec_blocks == 0:
             send_message("sync", soc=soc)
+            return
+        num_headers = 1
+        headers = payload
+        for i in orphans:
+            headers += i
+            num_headers += 1
+        new_message = num_headers + new_message
+        send_message("broadcast", cargo=[new_message, "headers"])
     elif command == "getheaders":
-        num_hash = int(payload[:2])
-        size = 2 + (num_hash + 1) * 64
+        chainwork = int(payload[:64], 16)
+        if blockchain.chainwork < chainwork:#tu by sa potom dal dat ze expect sync ak to budem chciet robit cez
+            return
+        num_hash = int(payload[64:66])
+        size = 64 + 2 + (num_hash + 1) * 64
         if len(payload) == size:
-            index = 2
+            index = 66
             for i in range(num_hash):
                 start_hash = payload[:64]
                 blockchain.c.execute("SELECT rowid FROM blockchain WHERE hash = (?);", (start_hash,))
