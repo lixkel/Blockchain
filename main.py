@@ -120,6 +120,9 @@ def handle_message(soc, message):
         if sync == False and expec_blocks == 0:
             send_message("sync", soc=soc)
             return
+        if mining:
+            to_mine.put("stop")
+            start_mining()
         num_headers = 1
         headers = payload
         for i in orphans:
@@ -397,10 +400,15 @@ def connect():
         outbound.put(["connect", [line[0], line[1], send_message("version1", cargo=line[0])]])
         con_sent = True
 
+def start_mining():
+    block_header, txs = blockchain.build_block()
+    to_mine.put([block_header, txs])
+
 
 version = "00000001"
 stime = int(time())
 nodes = {}
+mining = None
 expec_blocks = 0
 opt_nodes = 5
 num_time = 0
@@ -487,8 +495,7 @@ while True:
         new_block_hash = blockchain.hash(new_block[:216])
         blockchain.append(new_block)
         send_message("broadcast", cargo=["01"+new_block_hash, "headers"])
-        block_header, txs = blockchain.build_block()
-        to_mine.put([block_header, txs])
+        start_mining()
     if int(time()) - stime > 1800:
         num_time += 1
         current_time = int(time())
@@ -529,8 +536,7 @@ while True:
         elif a == "lsnodes":
             display.put(list(nodes.values()))
         elif a == "start mining":
-            block_header, txs = blockchain.build_block()
-            to_mine.put([block_header, txs])
+            start_mining()
             mining = threading.Thread(target=mine, args=(mined, to_mine))
             mining.start()
         elif a == "stop mining":
