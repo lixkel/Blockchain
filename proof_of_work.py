@@ -9,7 +9,7 @@ def mine(mined, to_mine):
                 for i in range(4294967295):
                     if not to_mine.empty():
                         comm = to_mine.get()
-                        if comm = "stop":
+                        if comm == "stop":
                             break
                     nonce = hex(i)[2:]
                     prefix = 8 - len(nonce)

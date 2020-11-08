@@ -14,7 +14,7 @@ version:
 
 getheaders:
 32 - chainwork
-1 - num of hashes
+1 - number of header hashes provided not including the stop hash
 32x - block hashes
 32 - stopping hash
 

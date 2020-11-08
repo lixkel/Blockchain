@@ -57,7 +57,6 @@ def handle_message(soc, message):
         if nodes[soc.getpeername()].expecting == "verack":
             nodes[soc.getpeername()].authorized = True
             nodes[soc.getpeername()].expecting = ""
-            send_message("sync", soc=soc)
         else:
             ban_check(soc.getpeername())
     elif command == "transaction":
@@ -109,6 +108,8 @@ def handle_message(soc, message):
         if blockchain.verify_block(payload):
             appended = blockchain.append(payload)
             if appended = "orphan":
+                new_message = fill(hex(self.chainwork)[2:], 64) + "01" + payload[8:72] + payload[8:72]
+                send_message("broadcast", cargo=[new_message, "getheaders"])
                 return
             elif appended:
                 orphans = blockchain.check_orphans()
@@ -133,13 +134,15 @@ def handle_message(soc, message):
     elif command == "getheaders":
         chainwork = int(payload[:64], 16)
         if blockchain.chainwork < chainwork:#tu by sa potom dal dat ze expect sync ak to budem chciet robit cez
+            send_message("sync", soc=soc)
             return
         num_hash = int(payload[64:66])
         size = 64 + 2 + (num_hash + 1) * 64
         if len(payload) == size:
+            stop_hash = payload[-64:]
+            start_hash = payload[:64]
             index = 66
             for i in range(num_hash):
-                start_hash = payload[:64]
                 blockchain.c.execute("SELECT rowid FROM blockchain WHERE hash = (?);", (start_hash,))
                 rowid = blockchain.c.fetchone()
                 if rowid != None:
@@ -148,7 +151,6 @@ def handle_message(soc, message):
             if rowid == None:
                 pass
             rowid = rowid[0]
-            stop_hash = payload[-64:]
             blockchain.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
             max_rowid = blockchain.c.fetchone()[0]
             print(f"rowid: {rowid}")
@@ -282,15 +284,22 @@ def send_message(command, soc = None, cargo = None):
         header = create_header(type, payload_lenght)
         outbound.put(["send", [soc, header + payload]])
     elif command == "sync":
+        num_headers = 0
         blockchain.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
         rowid = blockchain.c.fetchone()[0]
-        change = int(rowid / 10)
-        block_headers = ""
-        for i in range(10):
-            blockchain.c.execute("SELECT hash FROM blockchain WHERE rowid = (?);", (rowid,))
-            block_headers += blockchain.c.fetchone()[0]
-            rowid -= change
-        payload = bytes.fromhex("0a" + block_headers + "0"*64)
+        if rowid < 50:
+            blockchain.c.execute("SELECT block FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+            block_headers = blockchain.c.fetchone()[0]
+            num_headers = 1
+        else:
+            change = int(rowid / 10)
+            block_headers = ""
+            for i in range(9):
+                blockchain.c.execute("SELECT hash FROM blockchain WHERE rowid = (?);", (rowid,))
+                block_headers += blockchain.c.fetchone()[0]
+                rowid -= change
+                num_headers += 1
+        payload = bytes.fromhex(fill(hex(blockchain.chainwork)[2:], 64) + fill(hex(num_headers)[2:], 2) + block_headers + "0"*64)
         payload_lenght = hex(len(payload))[2:]
         header = create_header("getheaders", payload_lenght)
         outbound.put(["send", [soc, header + payload]])
