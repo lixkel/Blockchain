@@ -12,6 +12,7 @@ class Blockchain:
         self.mempool = []
         self.pub_keys = {}
         self.orphans = {}
+        self.alter_chains = []#[parent block rowid, chainwork, timestamp, [[hash, block],]]
         self.c.execute("SELECT count(name) FROM sqlite_master WHERE type='table' AND name='blockchain'")
         if self.c.fetchone()[0] != 1:
             self.c.execute("""CREATE TABLE blockchain (
@@ -191,19 +192,47 @@ class Blockchain:
 
 
     def append(self, new_block):
+        new_block_hash = self.hash(new_block[:216])
         self.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
         previous_block = self.c.fetchone()[0]
         if new_block[8:72] != previous_block:
-            block_hash = self.hash(new_block)
-            self.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (block_hash,))
+            self.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (new_block_hash,))
             in_blockchain = self.c.fetchone()
-            if not in_blockchain:
+            try:
+                in_orphans = self.orphans[new_block_hash]
+            except KeyError:
+                in_orphans = False
+            in_alter = False
+            for chain in alter_chains:
+                for i in chain[3]:
+                    if i[0] == new_block_hash:
+                        in_alter = True
+                        break
+                if in_alter:
+                    break
+            if not in_blockchain and not in_orphans and not in_alter:
+                self.c.execute("SELECT rowid FROM blockchain WHERE hash = (?);", (new_block[8:72],))
+                alter = self.c.fetchone()
+                if alter:
+                    rowid = alter[0]
+                    new_chainwork = int(2**256/int(new_block[136:200], 16))
+                    self.alter_chains.append([rowid, new_chainwork, int(time()), [[new_block_hash, new_block]]])
+                    return "appended"
+                for chain in alter_chains:
+                    if chain[3][-1][0] == new_block[8:72]:
+                        chain[3].append([new_block_hash, new_block])
+                        chain[1] += int(2**256/int(new_block[136:200], 16))
+                        if chain[1] > self.chainwork:
+                            pass
+                        return "appended"
+#treba popremislat nad check orphans
                 self.orphans[new_block[8:72]] = new_block
                 return "oprhan"
-        block_target = block[136:200]
+            else:
+                return "alrdgot"
+        block_target = new_block[136:200]
         if block_target != self.target:
             return False
-        new_block_hash = self.hash(new_block[:216])
         self.c.execute("INSERT INTO blockchain VALUES (?,?);", (new_block_hash, new_block))
         self.conn.commit()
         self.height += 1
@@ -236,16 +265,19 @@ class Blockchain:
         print(self.target)
 
 
-    def check_orphans(self):
-        self.c.execute("SELECT hash FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
-        top_hash = self.c.fetchone()[0]
+    def check_orphans(self, param):
+        if param == "main":
+            self.c.execute("SELECT hash FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+            top_hash = self.c.fetchone()[0]
+        else:
+            top_hash = param
         new = []
         try:
             orphan = self.orphans[top_hash]
             if self.append(orphan):
                 del self.orphans[top_hash]
-                new.append(orphan)
-                for i in self.check_orphans():
+                new.append(self.hash(orphan[:216]))
+                for i in self.check_orphans(self.hash(orphan[:216])):
                     new.append(orphan)
                 return new
         except KeyError:
