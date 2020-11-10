@@ -3,8 +3,9 @@ class Blockchain:
         import sqlite3
         from time import time
         from hashlib import sha256
+        from alter_chain import alter_chain
         from ecdsa import SigningKey, VerifyingKey, SECP256k1
-        global time, sha256, SigningKey, VerifyingKey, SECP256k1
+        global time, alter_chain, sha256, SigningKey, VerifyingKey, SECP256k1
         self.version = version
         self.prnt = prnt
         self.conn = sqlite3.connect("blockchain.db")
@@ -216,14 +217,35 @@ class Blockchain:
                 if alter:
                     rowid = alter[0]
                     new_chainwork = int(2**256/int(new_block[136:200], 16))
-                    self.alter_chains.append([rowid, new_chainwork, int(time()), [[new_block_hash, new_block]]])
+                    self.alter_chains.append(alter_chain(rowid, new_chainwork, int(time()), hash=new_block_hash, block=new_block))
                     return "appended"
                 for chain in alter_chains:
-                    if chain[3][-1][0] == new_block[8:72]:
+                    if chain.chain[-1][0] == new_block[8:72]:
                         chain[3].append([new_block_hash, new_block])
                         chain[1] += int(2**256/int(new_block[136:200], 16))
                         if chain[1] > self.chainwork:
-                            pass
+                            rowid = chain[0] + 1
+                            alter_row = 0
+                            alter_size = len(chain.chain)
+                            self.alter_chains.append(alter_chain(chain[0], self.chainwork, int(time()))
+                            self.c.execute("SELECT MAX(rowid) FROM blockchain;")
+                            max_rowid = self.c.fetchone()[0]
+                            while rowid >= max_rowid and alter_row >= alter_size:
+                                self.c.execute("SELECT * FROM blockchain WHERE rowid = (?);", (rowid,))
+                                set = self.c.fetchone()
+                                self.alter_chains[-1].chain.append([set[0], set[1]])
+                                self.c.execute("UPDATE blockchain SET hash = (?) block = (?) WHERE rowid = (?);", (chain.chain[alter_row][0], chain.chain[alter_row][1], max_rowid))
+                                rowid += 1
+                                alter_row += 1
+                            while rowid =< max_rowid:
+                                c.execute("DELETE FROM blockchain WHERE rowid=(?)", (rowid,))
+                                rowid += 1
+                            while alter_row =< alter_size:
+                                self.c.execute("INSERT INTO blockchain VALUES (?,?);", (chain.chain[alter_row][0], chain.chain[alter_row][1]))
+                                alter_row += 1
+                            self.chainwork = chain.chainwork
+                            self.alter_chains.remove(chain)
+                            conn.commit()
                         return "appended"
 #treba popremislat nad check orphans
                 self.orphans[new_block[8:72]] = new_block
