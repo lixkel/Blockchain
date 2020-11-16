@@ -51,8 +51,8 @@ def handle_message(soc, message):
                 nodes[soc.getpeername()].expecting = ""
                 send_message("addr", soc=nodes[soc.getpeername()].socket, cargo="init")
                 send_message("only", soc=list(nodes.values())[0].socket, cargo="getaddr")
-                send_message("sync", soc=soc)
-                sync = [False, int(time()), soc.getpeername()]
+                if soc.getpeername() not in hardcoded_nodes:
+                    send_message("sync", soc=soc)
                 con_sent = False
     elif command == "verack":
         if nodes[soc.getpeername()].expecting == "verack":
@@ -74,12 +74,14 @@ def handle_message(soc, message):
         else:
             ban_check(soc.getpeername())
     elif command == "headers":
-        if not sync[0] and sync[2] == soc.getpeername():
-            sync[1] = 0
+        print(f"headers msg: {payload}")
         if payload == "00":
             sync = [True, 0, 0]
             return
+        if not sync[0] and sync[2] == soc.getpeername():
+            sync[1] = 0
         num_headers = int(payload[:2],16)
+        num_hashes = 0
         index = 2
         getblocks = ""
         for i in range(num_headers):
@@ -89,14 +91,17 @@ def handle_message(soc, message):
             if result == None:
                 getblocks += header_hash
                 expec_blocks += 1
+                num_hashes += 1
             index += 64
-        new_message = payload[:2] + getblocks
+        new_message = fill(hex(num_hashes)[2:], 2) + getblocks
         send_message("universal", soc=soc, cargo=(new_message, "getblocks"))
     elif command == "getblocks":#toto by mohol poslat hocikto to by som mal riesit
+        print(payload)
         num_headers = int(payload[:2],16)
         index = 2
         for i in range(num_headers):
             header_hash = payload[index:index+64]
+            print(f"getblocks hash: {header_hash}")
             blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash,))
             result = blockchain.c.fetchone()
             if result:
@@ -109,93 +114,110 @@ def handle_message(soc, message):
         print(f"new block: {payload}")
         block_hash = blockchain.hash(payload[:216])
         expec_blocks -= 1
+        print(f"expec_blocks: {expec_blocks}")
         if blockchain.verify_block(payload):
             appended = blockchain.append(payload)
-            if appended = "orphan":
-                new_message = fill(hex(self.chainwork)[2:], 64) + "01" + payload[8:72] + payload[8:72]
-                send_message("universal", soc=soc, cargo=[new_message, "getheaders"])
+            print(f"block appended: {appended}")
+            if appended == "orphan":
+                new_message = fill("01" + payload[8:72])
+                send_message("universal", soc=soc, cargo=[new_message, "getblocks"])
                 return
-            elif appended = "alrdgot":
+            elif appended == "alrdgot":
                 return
-            elif appended = "appended":
+            elif appended == "appended":
                 new_message = "01" + block_hash
-                send_message("broadcast", soc=soc, cargo=[new_message, "headers"])
+                send_message("broadcast", soc=soc.getpeername(), cargo=[new_message, "headers"])
                 blockchain.check_orphans(block_hash)
+                return
             elif appended == True:
                 orphans = blockchain.check_orphans("main")
             else:
+                print(f"block bancheck")
                 ban_check(soc.getpeername())
                 return
         else:
             ban_check(soc.getpeername())
+        print(sync)
         if sync[0] == False and expec_blocks == 0:
+            print("block posielam sync")
             send_message("sync", soc=soc)
+            return
+        if not sync[0]:
             return
         if mining:
             to_mine.put("stop")
             start_mining()
         num_headers = 1
-        headers = block_header
+        headers = block_hash
         for i in orphans:
             headers += i
             num_headers += 1
-        new_message = num_headers + new_message
-        send_message("broadcast", cargo=[new_message, "headers"])
+        num_headers = fill(hex(num_headers)[2:], 2)
+        new_message = num_headers + headers
+        print(f"block relay: {new_message}")
+        send_message("broadcast", soc=soc.getpeername(),  cargo=[new_message, "headers"])
     elif command == "getheaders":
-        if not sync[0] and sync[1] == 0:
-            sync[1] = int(time())
-        if not sync[0] and sync[2] == soc.getpeername:
+        print(f"getheaders sync: {sync}")
+        if not sync[0] and sync[2] == soc.getpeername():
             sync = [True, 0, 0]
         chainwork = int(payload[:64], 16)
         if blockchain.chainwork < chainwork:#tu by sa potom dal dat ze expect sync ak to budem chciet robit cez
+            print("node ma vacsi chainwork")
             send_message("sync", soc=soc)
-            sync = [False, int(time()), soc.getpeername()]
             return
         num_hash = int(payload[64:66])
-        size = 64 + 2 + (num_hash + 1) * 64
+        print(num_hash)
+        size = 64 + 2 + ((num_hash + 1) * 64)
+        print(size)
+        print(f"len payload: {len(payload)}")
         if len(payload) == size:
             stop_hash = payload[-64:]
-            start_hash = payload[:64]
-            index = 66
+            start_hash = payload[66:130]
+            index = 130
             for i in range(num_hash):
                 blockchain.c.execute("SELECT rowid FROM blockchain WHERE hash = (?);", (start_hash,))
                 rowid = blockchain.c.fetchone()
                 if rowid != None:
                     break
                 index += 64
+                start_hash = payload[index:index+64]
             if rowid == None:
-                rowid = [1]
-            rowid = rowid[0]
+                rowid = 1
+            else:
+                rowid = rowid[0]
             blockchain.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
             max_rowid = blockchain.c.fetchone()[0]
             print(f"rowid: {rowid}")
             print(f"maxrowid: {max_rowid}")
             if rowid and rowid != max_rowid:
                 new_message = ""
+                num_headers = 0
                 for i in range(255):#toto bude este treba fixnut ked to bude nad 255
-                    rowid += 1
                     blockchain.c.execute("SELECT * FROM blockchain WHERE rowid = (?);", (rowid,))
                     block = blockchain.c.fetchone()
                     if block:
                         new_message += block[0]
+                        print(block[0])
+                        num_headers += 1
                         if block[0] == stop_hash:
-                            header_num = hex(i+1)[2:]
-                            if len(header_num) % 2 == 1:
-                                header_num = "0" + header_num
-                            new_message = header_num + new_message
+                            num_headers = hex(num_headers)[2:]
+                            num_headers = fill(num_headers, 2)
+                            new_message = num_headers + new_message
+                            print(f"getheaders respons: {new_message}")
                             send_message("universal", soc=soc, cargo=[new_message, "headers"])
-                            break
+                            return
                     else:
-                        if stop_hash == "0"*64:
-                            header_num = hex(i)[2:]
-                            if len(header_num) % 2 == 1:
-                                header_num = "0" + header_num
-                            new_message = header_num + new_message
-                            send_message("universal", soc=soc, cargo=[new_message, "headers"])
-                            break
+                        break
+                    rowid += 1
+                num_headers = hex(num_headers)[2:]
+                num_headers = fill(num_headers, 2)
+                new_message = num_headers + new_message
+                print(f"getheaders respons: {new_message}")
+                send_message("universal", soc=soc, cargo=[new_message, "headers"])
             elif rowid == max_rowid:
                 send_message("universal",soc=soc, cargo=["00", "headers"])
         else:
+            print("getheaders ban check")
             ban_check(soc.getpeername())
     elif command == "getaddr":
         print("som v getaddr")
@@ -213,7 +235,7 @@ def handle_message(soc, message):
             node_timestamp = int(payload[index+12:index+20], 16)
             print(node_ip, node_port, node_timestamp)
             print(my_addr, port)
-            if (node_ip, node_port) in hadcoded_nodes:
+            if (node_ip, node_port) in hardcoded_nodes:
                 print("som tam jebo")
                 continue
             if node_ip == "127.0.0.1" or node_ip == "0.0.0.0":
@@ -289,7 +311,6 @@ def send_message(command, soc = None, cargo = None):
         outbound.put(["broadcast", [soc, header + payload]])
     elif command == "broadcast":
         payload, type = cargo
-        print(f"payload broadcast: {payload}")
         payload = bytes.fromhex(payload)
         payload_lenght = hex(len(payload))[2:]
         header = create_header(type, payload_lenght)
@@ -301,12 +322,15 @@ def send_message(command, soc = None, cargo = None):
         header = create_header(type, payload_lenght)
         outbound.put(["send", [soc, header + payload]])
     elif command == "sync":
+        sync = [False, int(time()), soc.getpeername()]
         num_headers = 0
         blockchain.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
         rowid = blockchain.c.fetchone()[0]
         if rowid < 50:
-            blockchain.c.execute("SELECT block FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+            print(f"sync < 50 rowid: {rowid}")
+            blockchain.c.execute("SELECT hash FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
             block_headers = blockchain.c.fetchone()[0]
+            print(f"sync < 50 hash: {block_headers}")
             num_headers = 1
         else:
             change = int(rowid / 10)
@@ -316,6 +340,7 @@ def send_message(command, soc = None, cargo = None):
                 block_headers += blockchain.c.fetchone()[0]
                 rowid -= change
                 num_headers += 1
+        print(f"sync num_headers: {num_headers}")
         payload = bytes.fromhex(fill(hex(blockchain.chainwork)[2:], 64) + fill(hex(num_headers)[2:], 2) + block_headers + "0"*64)
         payload_lenght = hex(len(payload))[2:]
         header = create_header("getheaders", payload_lenght)
@@ -392,11 +417,18 @@ def decode_ip(ip):
 
 
 def ban_check(address):
-    nodes[address].banscore += 1
-    if nodes[address].banscore >= 10:
-        c.execute("DELETE FROM nodes WHERE addr=(?) AND port=(?)", (address[0], address[1]))
-        outbound.put(["close", address])
-        ban_list.append(address)
+    print("bancheck")
+    try:
+        print(f"ban nodes: {nodes}")
+        print(f"ban addr: {address}")
+        nodes[address].banscore += 1
+        if nodes[address].banscore >= 10:
+            c.execute("DELETE FROM nodes WHERE addr=(?) AND port=(?)", (address[0], address[1]))
+            outbound.put(["close", address])
+            ban_list.append(address)
+    except KeyError:
+        print("ban_check key error")
+        pass
 
 
 def routable(ip):
@@ -444,7 +476,7 @@ prev_time = int(time())
 port = 55555
 default_port = 55555
 con_sent = False
-hadcoded_nodes = (("192.168.1.101", 55555),)
+hardcoded_nodes = (("192.168.1.101", 55555),)
 inbound = Queue()
 outbound = Queue()
 to_mine = Queue()
@@ -471,7 +503,7 @@ if c.fetchone()[0] != 1:
 print("finding nodes...")
 c.execute("SELECT * FROM nodes;")
 if c.fetchall() == []:
-    for i in hadcoded_nodes:
+    for i in hardcoded_nodes:
         sent = None
         outbound.put(["connect", [i[0], i[1], send_message("version1", cargo=i[0])]])
         started = int(time())
@@ -492,6 +524,7 @@ if c.fetchall() == []:
             outbound.put(["close", list(nodes.values())[0].address])
         c.execute("SELECT * FROM nodes;")
         if len(c.fetchall()) >= 8:
+            outbound.put(["close", list(nodes.values())[0].address])
             break#treba zatvorit conection
 print("connecting...")
 
@@ -524,14 +557,19 @@ while True:
         send_message("broadcast", cargo=["01"+new_block_hash, "headers"])
         start_mining()
     if int(time()) - stime > 1800:
+        print("som v time")
         num_time += 1
         current_time = int(time())
+        print(f"time nodes: {nodes}")
         for i in list(nodes.values()):
-            c.execute("UPDATE nodes timestamp = (?) WHERE addr = (?) AND port = (?);", (i.lastrecv, i.address[0], i.address[1]))
-            if current_time - i.lastsend < 1800:
-                send_message("only", soc=nodes[soc.getpeername()].socket, cargo="active")
-            if current_time - i.lastrecv < 5400:
+            print("som v time loop")
+            c.execute("UPDATE nodes SET timestamp = (?) WHERE addr = (?) AND port = (?);", (i.lastrecv, i.address[0], i.port))
+            if current_time - i.lastrecv > 5400:
+                print("som v time close")
                 outbound.put(["close", i.address])
+            elif current_time - i.lastsend > 1800:
+                print("som v time active")
+                send_message("only", soc=nodes[soc.getpeername()].socket, cargo="active")
         if num_time == 48:
             send_message("addr", cargo="broadcast")
             c.execute("SELECT MAX(rowid) FROM nodes;")
@@ -539,12 +577,12 @@ while True:
             if len(nodes) >= 3 and rowid > 1000:
                 c.execute("DELETE FROM nodes WHERE timestamp<(?)", (stime, ))
                 num_time = 0
-            stime = int(time())
+        stime = int(time())
         conn.commit()
     if not sync[0]:
         if sync[1] != 0 and  int(time()) - sync[1] > 15:
-            sync = [True, 0, 0]
             ban_check(sync[2])
+            sync = [True, 0, 0]
     if not com.empty():
         a, b = com.get()
         if a == "con":
@@ -559,7 +597,7 @@ while True:
                 send_message("send", cargo=cargo)
         elif a == "import":
             b, d = b
-            blockchain.save_key(b, c)
+            blockchain.save_key(b, d)
         elif a == "export":
             display.put(blockchain.ver_key_str)
         elif a == "lsimported":
@@ -567,6 +605,10 @@ while True:
         elif a == "lsnodes":
             display.put(list(nodes.values()))
         elif a == "start mining":
+            if not sync[0]:
+                print("este niesi sync")
+                continue
+            print("minujeme")
             start_mining()
             mining = threading.Thread(target=mine, args=(mined, to_mine))
             mining.start()
@@ -579,11 +621,12 @@ while True:
                 display.put(list(nodes.values()))
             else:
                 sock = list(nodes.values())[b].socket
-                sync = [False, int(time()), sock.getpeername()]
                 send_message("sync", soc=sock)
         elif a == "highest":
             blockchain.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
-            print(blockchain.c.fetchone()[1])
+            row = blockchain.c.fetchone()
+            print(row[0])
+            print(row[1])
         elif a == "end":
             #print(mining)
             outbound.put(["end", []])

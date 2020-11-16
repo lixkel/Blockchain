@@ -33,7 +33,11 @@ def main(nodes, inbound, outbound, ban_list):
                 new_message = receive_message(soc)
                 if not new_message:
                     sockets_list.remove(soc)
-                    del nodes[soc.getpeername()]
+                    for i in list(nodes.keys()):
+                        try:
+                            del nodes[soc.getpeername()]
+                        except:
+                            del nodes[i]
                 else:
                     if new_message != "error":
                         nodes[soc.getpeername()].lastrecv = int(time())
@@ -49,7 +53,7 @@ def main(nodes, inbound, outbound, ban_list):
                 addr, port, vers = body
                 new_soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 try:
-                    new_soc.settimeout(10)
+                    new_soc.settimeout(5)
                     new_soc.connect((addr, port))
                     new_soc.settimeout(None)
                     new_node = node((new_soc, new_soc.getpeername()), False, "version", int(time()))

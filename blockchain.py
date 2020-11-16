@@ -53,12 +53,12 @@ class Blockchain:
         try:
             save_file = open("save", "r")
             self.chainwork = int(bytes.fromhex(keyFile.read()))
-        except FileNotFoundError and ValueError:
+        except:
             if 'save_file' in locals():
                 save_file.close()
             save_file = open("save", "w")
-            c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
-            max_rowid = c.fetchone()[0]
+            self.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+            max_rowid = self.c.fetchone()[0]
             if max_rowid == 0:
                 return
             self.chainwork = 0
@@ -71,6 +71,7 @@ class Blockchain:
 
 
     def verify_block(self, block):
+        block_target = block[136:200]
         block_target = int(block_target, 16)
         header_hash = self.hash(block[:216])
         if not int(header_hash, 16) <= block_target:
@@ -204,8 +205,8 @@ class Blockchain:
             except KeyError:
                 in_orphans = False
             in_alter = False
-            for chain in alter_chains:
-                for i in chain[3]:
+            for chain in self.alter_chains:
+                for i in chain.chain:
                     if i[0] == new_block_hash:
                         in_alter = True
                         break
@@ -219,15 +220,15 @@ class Blockchain:
                     new_chainwork = int(2**256/int(new_block[136:200], 16))
                     self.alter_chains.append(alter_chain(rowid, new_chainwork, int(time()), hash=new_block_hash, block=new_block))
                     return "appended"
-                for chain in alter_chains:
+                for chain in self.alter_chains:
                     if chain.chain[-1][0] == new_block[8:72]:
-                        chain[3].append([new_block_hash, new_block])
-                        chain[1] += int(2**256/int(new_block[136:200], 16))
-                        if chain[1] > self.chainwork:
-                            rowid = chain[0] + 1
+                        chain.chain.append([new_block_hash, new_block])
+                        chain.chainwork += int(2**256/int(new_block[136:200], 16))
+                        if chain.chainwork > self.chainwork:
+                            rowid = chain.parent + 1
                             alter_row = 0
                             alter_size = len(chain.chain)
-                            self.alter_chains.append(alter_chain(chain[0], self.chainwork, int(time()))
+                            self.alter_chains.append(alter_chain(chain.parent, self.chainwork, int(time())))
                             self.c.execute("SELECT MAX(rowid) FROM blockchain;")
                             max_rowid = self.c.fetchone()[0]
                             while rowid >= max_rowid and alter_row >= alter_size:
@@ -237,19 +238,28 @@ class Blockchain:
                                 self.c.execute("UPDATE blockchain SET hash = (?) block = (?) WHERE rowid = (?);", (chain.chain[alter_row][0], chain.chain[alter_row][1], max_rowid))
                                 rowid += 1
                                 alter_row += 1
-                            while rowid =< max_rowid:
-                                c.execute("DELETE FROM blockchain WHERE rowid=(?)", (rowid,))
+                            while rowid <= max_rowid:
+                                self.c.execute("DELETE FROM blockchain WHERE rowid=(?)", (rowid,))
                                 rowid += 1
-                            while alter_row =< alter_size:
+                            while alter_row < alter_size:
                                 self.c.execute("INSERT INTO blockchain VALUES (?,?);", (chain.chain[alter_row][0], chain.chain[alter_row][1]))
                                 alter_row += 1
                             self.chainwork = chain.chainwork
                             self.alter_chains.remove(chain)
-                            conn.commit()
+                            self.conn.commit()
+                            self.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+                            self.height = self.c.fetchone()[0]
+                            if self.height % 10 == 0:
+                                print("append calc_height")
+                                self.calc_target()
                         return "appended"
-#treba popremislat nad check orphans
+                try:
+                    a = self.orphans[new_block[8:72]]
+                    return "alrdgot"
+                except KeyError:
+                    pass
                 self.orphans[new_block[8:72]] = new_block
-                return "oprhan"
+                return "orphan"
             else:
                 return "alrdgot"
         block_target = new_block[136:200]
@@ -260,6 +270,7 @@ class Blockchain:
         self.height += 1
         self.chainwork += int(2**256/int(block_target, 16))
         if self.height % 10 == 0:
+            print("append calc_height")
             self.calc_target()
         return True
 
@@ -287,7 +298,7 @@ class Blockchain:
         print(self.target)
 
 
-    def check_orphans(self, param):
+    def check_orphans(self, param):#berie ako parameter hash blocku ku ktoremu pozrie ci v orphans nema child a potom zavola append a znovu check_orphans
         if param == "main":
             self.c.execute("SELECT hash FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
             top_hash = self.c.fetchone()[0]
