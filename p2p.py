@@ -1,10 +1,11 @@
-def start_node(port, nodes, inbound, outbound, ban_list):
+def start_node(port, nodes, inbound, outbound, ban_list, log):
     import socket
     from time import time
     global socket, time
     from node import node
-    global server_socket
-    global sockets_list
+    global server_socket, sockets_list
+    global logging
+    logging = log
     host = "0.0.0.0"
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -62,7 +63,7 @@ def main(nodes, inbound, outbound, ban_list):
                     send_message(new_node.socket, vers, nodes)
                 except socket.error as e:
                     inbound.put([(addr, port), "error"])
-                    print(f"Address-related error connecting to server: {e}")
+                    logging.debug(f"Address-related error connecting to server: {e}")
             elif comm == "send":
                 soc, message = body
                 suc_send = send_message(soc, message, nodes)
@@ -103,7 +104,7 @@ def send_message(soc, message, nodes):
         nodes[soc.getpeername()].lastsend = int(time())
         return True
     except socket.error as e:
-        print(f"Error sending data: {e}")
+        logging.debug(f"Error sending data: {e}")
 
 
 def bind_socket(host, port):
@@ -114,7 +115,7 @@ def bind_socket(host, port):
         server_socket.listen()
 
     except socket.error as e:
-        print(f"Socket Binding error {e}\nRetrying...")
+        logging.debug(f"Socket Binding error {e}\nRetrying...")
         bind_socket()
 
 
@@ -129,5 +130,5 @@ def receive_message(soc):
         payload = soc.recv(payload_lenght)
         return message_header + payload.hex()
     except socket.error as e:
-        print(f"Error receiving data: {e}")
+        logging.debug(f"Error receiving data: {e}")
         return False

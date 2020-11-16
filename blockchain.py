@@ -1,11 +1,13 @@
 class Blockchain:
-    def __init__(self, version, prnt):
+    def __init__(self, version, prnt, log):
         import sqlite3
         from time import time
         from hashlib import sha256
         from alter_chain import alter_chain
         from ecdsa import SigningKey, VerifyingKey, SECP256k1
         global time, alter_chain, sha256, SigningKey, VerifyingKey, SECP256k1
+        global logging
+        logging = log
         self.version = version
         self.prnt = prnt
         self.conn = sqlite3.connect("blockchain.db")
@@ -49,7 +51,7 @@ class Blockchain:
         self.height = self.c.fetchone()[0]
         self.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
         self.target = self.c.fetchone()[1][136:200]
-        print(self.target)
+        logging.debug(self.target)
         try:
             save_file = open("save", "r")
             self.chainwork = int(bytes.fromhex(keyFile.read()))
@@ -76,6 +78,7 @@ class Blockchain:
         header_hash = self.hash(block[:216])
         if not int(header_hash, 16) <= block_target:
             return False
+            logging.debug("block False")
         num_tx = int(block[216:218], 16)
         index = 218
         tx_remaining = 392
@@ -87,17 +90,19 @@ class Blockchain:
             tx = block[index-2:tx_size]
             if not self.verify_tx(tx):
                 return False
+                logging.debug("block False")
             tx_hashes.append(self.hash(tx[2:]))
             index = index + tx_size
         merkle_root = self.merkle_tree(tx_hashes)
         if merkle_root != block[72:136]:
             return False
+            logging.debug("block False")
+        logging.debug("block True")
         return True
 
 
     def verify_tx(self, tx):
         global SigningKey, VerifyingKey, SECP256k1
-        print(tx)
         sig = bytes.fromhex(tx[-128:])
         vk = VerifyingKey.from_string(bytes.fromhex(tx[-256:-128]), curve=SECP256k1)
         if vk.verify(sig, bytes.fromhex(tx[2:-128])):
@@ -105,7 +110,9 @@ class Blockchain:
                 if tx[-384:-256] == self.ver_key_str:
                     msg_size = int(tx[:2], 16)
                     self.prnt.put(bytes.fromhex(tx[2:msg_size+2]).decode("utf-8"))
+            logging.debug("tx True")
             return True
+        logging.debug("tx False")
         return False
 
 
