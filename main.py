@@ -511,103 +511,109 @@ print("connecting...")
 tcli = threading.Thread(target=cli, args=(com, display, prnt))
 tcli.start()
 
-while True:
-    if len(nodes) < opt_nodes:
-        if len(nodes) == 0 and int(time()) % 5 == 0 and int(time()) != prev_time:
-            prev_time = int(time())
-            c.execute("SELECT * FROM nodes;")
-            logging.debug(f"con_sent: {con_sent}")
-            logging.debug(c.fetchall())
-            print("connecting...")
-        if not con_sent:
-            connect()#mozno by bolo lepsie spravit init connect v loope pred tymto
-    if not inbound.empty():
-        soc, message = inbound.get()
-        if message == "error":
-            c.execute("DELETE FROM nodes WHERE addr=(?) AND port=(?)", (soc[0], soc[1]))
-            conn.commit()
-            con_sent = False
-        else:
-            handle_message(soc, message)
-    if not mined.empty():
-        new_block = mined.get()
-        logging.debug(f"new block mined: {new_block}")
-        new_block_hash = blockchain.hash(new_block[:216])
-        blockchain.append(new_block)
-        send_message("broadcast", cargo=["01"+new_block_hash, "headers"])
-        start_mining()
-    if int(time()) - stime > 1800:
-        num_time += 1
-        current_time = int(time())
-        for i in list(nodes.values()):
-            c.execute("UPDATE nodes SET timestamp = (?) WHERE addr = (?) AND port = (?);", (i.lastrecv, i.address[0], i.port))
-            if current_time - i.lastrecv > 5400:
-                outbound.put(["close", i.address])
-            elif current_time - i.lastsend > 1800:
-                send_message("only", soc=nodes[soc.getpeername()].socket, cargo="active")
-        if num_time == 48:
-            send_message("addr", cargo="broadcast")
-            c.execute("SELECT MAX(rowid) FROM nodes;")
-            rowid = c.fetchone()[0]
-            if len(nodes) >= 3 and rowid > 1000:
-                c.execute("DELETE FROM nodes WHERE timestamp<(?)", (stime, ))
-                num_time = 0
-        stime = int(time())
-        conn.commit()
-    if not sync[0]:
-        if sync[1] != 0 and  int(time()) - sync[1] > 15:
-            ban_check(sync[2])
-            sync = [True, 0, 0]
-    if not com.empty():
-        a, b = com.get()
-        logging.debug(f"cli a: {a}")
-        logging.debug(f"cli b: {b}")
-        if a == "con":
-            b, d = b
-            outbound.put(["connect", [b, d, send_message("version1", cargo=b)]])
-        elif a == "send":
-            b,d = b
-            if b == "":
-                display.put(list(blockchain.pub_keys.values()))
+try:
+    while True:
+        if len(nodes) < opt_nodes:
+            if len(nodes) == 0 and int(time()) % 5 == 0 and int(time()) != prev_time:
+                prev_time = int(time())
+                c.execute("SELECT * FROM nodes;")
+                logging.debug(f"con_sent: {con_sent}")
+                logging.debug(c.fetchall())
+                print("connecting...")
+            if not con_sent:
+                connect()#mozno by bolo lepsie spravit init connect v loope pred tymto
+        if not inbound.empty():
+            soc, message = inbound.get()
+            if message == "error":
+                c.execute("DELETE FROM nodes WHERE addr=(?) AND port=(?)", (soc[0], soc[1]))
+                conn.commit()
+                con_sent = False
             else:
-                cargo = [d, list(blockchain.pub_keys.keys())[b]]
-                send_message("send", cargo=cargo)
-        elif a == "import":
-            b, d = b
-            blockchain.save_key(b, d)
-        elif a == "export":
-            display.put(blockchain.ver_key_str)
-        elif a == "lsimported":
-            display.put(blockchain.pub_keys)
-        elif a == "lsnodes":
-            display.put(list(nodes.values()))
-        elif a == "start mining":
-            if not sync[0]:
-                print("este niesi sync")
-                continue
-            logging.debug("minujeme")
+                handle_message(soc, message)
+        if not mined.empty():
+            new_block = mined.get()
+            logging.debug(f"new block mined: {new_block}")
+            new_block_hash = blockchain.hash(new_block[:216])
+            blockchain.append(new_block)
+            send_message("broadcast", cargo=["01"+new_block_hash, "headers"])
             start_mining()
-            mining = threading.Thread(target=mine, args=(mined, to_mine))
-            mining.start()
-        elif a == "stop mining":
-            if mining:
-                mining.terminate()
-                mining = None
-        elif a == "sync":
-            if b == "":
+        if int(time()) - stime > 1800:
+            num_time += 1
+            current_time = int(time())
+            for i in list(nodes.values()):
+                c.execute("UPDATE nodes SET timestamp = (?) WHERE addr = (?) AND port = (?);", (i.lastrecv, i.address[0], i.port))
+                if current_time - i.lastrecv > 5400:
+                    outbound.put(["close", i.address])
+                elif current_time - i.lastsend > 1800:
+                    send_message("only", soc=nodes[soc.getpeername()].socket, cargo="active")
+            if num_time == 48:
+                send_message("addr", cargo="broadcast")
+                c.execute("SELECT MAX(rowid) FROM nodes;")
+                rowid = c.fetchone()[0]
+                if len(nodes) >= 3 and rowid > 1000:
+                    c.execute("DELETE FROM nodes WHERE timestamp<(?)", (stime, ))
+                    num_time = 0
+            stime = int(time())
+            conn.commit()
+        if not sync[0]:
+            if sync[1] != 0 and  int(time()) - sync[1] > 15:
+                ban_check(sync[2])
+                sync = [True, 0, 0]
+        if not com.empty():
+            a, b = com.get()
+            logging.debug(f"cli a: {a}")
+            logging.debug(f"cli b: {b}")
+            if a == "con":
+                b, d = b
+                outbound.put(["connect", [b, d, send_message("version1", cargo=b)]])
+            elif a == "send":
+                b,d = b
+                if b == "":
+                    display.put(list(blockchain.pub_keys.values()))
+                else:
+                    cargo = [d, list(blockchain.pub_keys.keys())[b]]
+                    send_message("send", cargo=cargo)
+            elif a == "import":
+                b, d = b
+                blockchain.save_key(b, d)
+            elif a == "export":
+                display.put(blockchain.ver_key_str)
+            elif a == "lsimported":
+                display.put(blockchain.pub_keys)
+            elif a == "lsnodes":
                 display.put(list(nodes.values()))
-            else:
-                sock = list(nodes.values())[b].socket
-                send_message("sync", soc=sock)
-        elif a == "highest":
-            blockchain.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
-            row = blockchain.c.fetchone()
-            print(row[0])
-            print(row[1])
-        elif a == "end":
-            #print(mining)
-            outbound.put(["end", []])
-            local_node.join()
-            #if mining:
-                #mining.terminate()
-            break
+            elif a == "start mining":
+                if not sync[0]:
+                    print("este niesi sync")
+                    continue
+                logging.debug("minujeme")
+                start_mining()
+                mining = threading.Thread(target=mine, args=(mined, to_mine))
+                mining.start()
+            elif a == "stop mining":
+                if mining:
+                    mining.terminate()
+                    mining = None
+            elif a == "sync":
+                if b == "":
+                    display.put(list(nodes.values()))
+                else:
+                    sock = list(nodes.values())[b].socket
+                    send_message("sync", soc=sock)
+            elif a == "highest":
+                blockchain.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+                row = blockchain.c.fetchone()
+                print(row[0])
+                print(row[1])
+            elif a == "end":
+                #print(mining)
+                outbound.put(["end", []])
+                local_node.join()
+                #if mining:
+                    #mining.terminate()
+                break
+except Exception as e:
+    print(e)
+    logging.error(e)
+    outbound.put(["end", []])
+    local_node.join()
