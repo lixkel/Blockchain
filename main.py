@@ -116,7 +116,7 @@ def handle_message(soc, message):
         expec_blocks -= 1
         logging.debug(f"expec_blocks: {expec_blocks}")
         if blockchain.verify_block(payload):
-            appended = blockchain.append(payload)
+            appended = blockchain.append(payload, sync[0])
             logging.debug(f"block appended: {appended}")
             if appended == "orphan":
                 new_message = fill("01" + payload[8:72])
@@ -534,7 +534,7 @@ try:
             new_block = mined.get()
             logging.debug(f"new block mined: {new_block}")
             new_block_hash = blockchain.hash(new_block[:216])
-            blockchain.append(new_block)
+            blockchain.append(new_block, sync[0])
             send_message("broadcast", cargo=["01"+new_block_hash, "headers"])
             start_mining()
         if int(time()) - stime > 1800:
@@ -612,6 +612,7 @@ try:
                 #if mining:
                     #mining.terminate()
                 break
+
 except Exception as e:
     print(e)
     logging.error(e)

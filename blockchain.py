@@ -4,8 +4,10 @@ class Blockchain:
         from time import time
         from hashlib import sha256
         from alter_chain import alter_chain
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
         from ecdsa import SigningKey, VerifyingKey, SECP256k1
-        global time, alter_chain, sha256, SigningKey, VerifyingKey, SECP256k1
+        global time, alter_chain, sha256, Ed25519PrivateKey, Ed25519PublicKey
         global logging
         logging = log
         self.version = version
@@ -29,14 +31,23 @@ class Blockchain:
         try:
             keyFile = open("keyFile", "r")
             read = bytes.fromhex(keyFile.read())
-            self.key = SigningKey.from_string(read, curve=SECP256k1)
+            self.private_key = Ed25519PrivateKey.from_private_bytes(read)
         except:
             keyFile = open("keyFile", "w")
-            self.key = SigningKey.generate(curve=SECP256k1)
-            keyFile.write(self.key.to_string().hex())
+            self.private_key = Ed25519PrivateKey.generate()
+            private_bytes = private_bytes = self.private_key.private_bytes(
+                                encoding=serialization.Encoding.Raw,
+                                format=serialization.PrivateFormat.Raw,
+                                encryption_algorithm=serialization.NoEncryption()
+                                )
+            keyFile.write(private_bytes.hex())
         keyFile.close()
-        self.ver_key = self.key.verifying_key
-        self.ver_key_str = self.ver_key.to_string().hex()
+        self.public_key = self.private_key.public_key()
+        self.public_key_hex = self.public_key.public_bytes(
+                                encoding=serialization.Encoding.Raw,
+                                format=serialization.PublicFormat.Raw
+                                )
+        self.public_key_hex = self.public_key_hex.hex()
 
         try:
             pubKeyFile = open("pubKeyFile", "r")
@@ -77,54 +88,58 @@ class Blockchain:
         block_target = int(block_target, 16)
         header_hash = self.hash(block[:216])
         if not int(header_hash, 16) <= block_target:
-            return False
             logging.debug("block False")
+            return False
         num_tx = int(block[216:218], 16)
         index = 218
-        tx_remaining = 392
+        tx_remaining = 268
         tx_hashes = []
         for i in range(num_tx):
-            message_size = int(block[index:index+2], 16) * 2
-            index += 2
+            message_size = int(block[index+2:index+4], 16) * 2
             tx_size = index + message_size + tx_remaining
-            tx = block[index-2:tx_size]
+            tx = block[index:tx_size]
             if not self.verify_tx(tx):
-                return False
                 logging.debug("block False")
+                return False
             tx_hashes.append(self.hash(tx[2:]))
             index = index + tx_size
         merkle_root = self.merkle_tree(tx_hashes)
         if merkle_root != block[72:136]:
-            return False
             logging.debug("block False")
+            return False
         logging.debug("block True")
         return True
 
 
     def verify_tx(self, tx):
-        global SigningKey, VerifyingKey, SECP256k1
+        global Ed25519PublicKey
         sig = bytes.fromhex(tx[-128:])
-        vk = VerifyingKey.from_string(bytes.fromhex(tx[-256:-128]), curve=SECP256k1)
-        if vk.verify(sig, bytes.fromhex(tx[2:-128])):
-            if tx not in self.mempool:
-                if tx[-384:-256] == self.ver_key_str:
-                    msg_size = int(tx[:2], 16)
-                    self.prnt.put(bytes.fromhex(tx[2:msg_size+2]).decode("utf-8"))
-            logging.debug("tx True")
-            return True
-        logging.debug("tx False")
-        return False
+        sender_pub_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(tx[-256:-128]))
+        try:
+            sender_pub_key.verify(sig, bytes.fromhex(tx[:-128]))
+        else:
+            logging.debug("tx False")
+            return False
+        content = tx_content(tx)
+        if content:
+            self.prnt.put(content)
+        if tx not in self.mempool:
+            content = tx_content(tx)
+            if content:
+                self.prnt.put(content)
+        logging.debug("tx True")
+        return True
 
 
     def tx_content(self, tx):
         if self.for_me(tx):
-            msg_size = int(tx[:2], 16)
-            return bytes.fromhex(tx[2:msg_size+2]).decode("utf-8")
+            msg_size = int(tx[2:4], 16)
+            return bytes.fromhex(tx[4:msg_size]).decode("utf-8")
         return False
 
 
     def for_me(self, tx):
-        if tx[-384:-256] == self.ver_key_str:
+        if tx[-384:-256] == self.public_key_hex:
             return True
         return False
 
@@ -163,16 +178,16 @@ class Blockchain:
                 msg_size = "0" + msg_size
             msg_size = bytes.fromhex(msg_size)
             timestamp = hex(int(time()))[2:]
-            tx = msg + timestamp + rec_key + self.ver_key_str
+            tx = msg + timestamp + rec_key + self.public_key_hex
             tx = bytes.fromhex(tx)
-            signature = self.key.sign(tx)
+            signature = self.private_key.sign(tx)
             tx = msg_size + tx + signature
             if self.verify_tx(tx.hex()) == True:
                 return tx
             else:
-                print("tx je zla")
-        else:
-            print("sprava je prilis velka")
+                logging.debug("vytvorena tx je zla")
+        else:#tu treba zajebat aj
+            logging.debug("sprava je prilis velka")
         return False
 
 
@@ -200,7 +215,7 @@ class Blockchain:
         return block_header, txs
 
 
-    def append(self, new_block):
+    def append(self, new_block, sync):
         new_block_hash = self.hash(new_block[:216])
         self.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
         previous_block = self.c.fetchone()[0]
@@ -257,7 +272,7 @@ class Blockchain:
                             self.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
                             self.height = self.c.fetchone()[0]
                             if self.height % 10 == 0:
-                                print("append calc_height")
+                                logging.debug("append calc_height")
                                 self.calc_target()
                         return "appended"
                 try:
@@ -272,12 +287,15 @@ class Blockchain:
         block_target = new_block[136:200]
         if block_target != self.target:
             return False
+        if sync and -360 <= int(time()) - new_block[208:216] <= 360:
+            logging.debug("append bad block timestamp")
+            return False
         self.c.execute("INSERT INTO blockchain VALUES (?,?);", (new_block_hash, new_block))
         self.conn.commit()
         self.height += 1
         self.chainwork += int(2**256/int(block_target, 16))
         if self.height % 10 == 0:
-            print("append calc_height")
+            logging.debug("append calc_height")
             self.calc_target()
         return True
 
@@ -301,8 +319,8 @@ class Blockchain:
         elif len(new_target) > 64:
             new_target = "f" * 64
         self.target = new_target
-        print(change)
-        print(self.target)
+        logging.debug(f"difficulty change: {change}")
+        logging.debug(f"new target: {self.target}")
 
 
     def check_orphans(self, param):#berie ako parameter hash blocku ku ktoremu pozrie ci v orphans nema child a potom zavola append a znovu check_orphans
