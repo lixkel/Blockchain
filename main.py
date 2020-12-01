@@ -63,13 +63,15 @@ def handle_message(soc, message):
             ban_check(soc.getpeername())
     elif command == "transaction":
         if nodes[soc.getpeername()].authorized == True:
-            if blockchain.verify_tx(payload) == True:
+            result = blockchain.verify_tx(payload)
+            if result == True:
                 #mal by som to spreavit tak aby sa checkovalo len raz ci je tx v mempool
-                if payload not in blockchain.mempool:
-                    blockchain.mempool.append(payload)
-                    send_message("broadcast", soc=soc.getpeername(), cargo=[payload, "transaction"])
-                else:
-                    pass
+                #vymazava sa z mempoolu?
+                blockchain.valid_tx.append(payload)
+                blockchain.mempool.append(payload)
+                send_message("broadcast", soc=soc.getpeername(), cargo=[payload, "transaction"])
+            elif result == "already":
+                pass
             else:
                 ban_check(soc.getpeername())
         else:
@@ -94,7 +96,7 @@ def handle_message(soc, message):
                 expec_blocks += 1
                 num_hashes += 1
             index += 64
-        new_message = fill(hex(num_hashes)[2:], 2) + getblocks
+        new_message = blockchain.fill(hex(num_hashes)[2:], 2) + getblocks
         send_message("universal", soc=soc, cargo=(new_message, "getblocks"))
     elif command == "getblocks":#toto by mohol poslat hocikto to by som mal riesit
         num_headers = int(payload[:2],16)
@@ -119,7 +121,7 @@ def handle_message(soc, message):
             appended = blockchain.append(payload, sync[0])
             logging.debug(f"block appended: {appended}")
             if appended == "orphan":
-                new_message = fill("01" + payload[8:72])
+                new_message = blockchain.fill("01" + payload[8:72])
                 send_message("universal", soc=soc, cargo=[new_message, "getblocks"])
                 return
             elif appended == "alrdgot":
@@ -151,7 +153,7 @@ def handle_message(soc, message):
         for i in orphans:
             headers += i
             num_headers += 1
-        num_headers = fill(hex(num_headers)[2:], 2)
+        num_headers = blockchain.fill(hex(num_headers)[2:], 2)
         new_message = num_headers + headers
         send_message("broadcast", soc=soc.getpeername(),  cargo=[new_message, "headers"])
     elif command == "getheaders":
@@ -195,7 +197,7 @@ def handle_message(soc, message):
                         num_headers += 1
                         if block[0] == stop_hash:
                             num_headers = hex(num_headers)[2:]
-                            num_headers = fill(num_headers, 2)
+                            num_headers = blockchain.fill(num_headers, 2)
                             new_message = num_headers + new_message
                             send_message("universal", soc=soc, cargo=[new_message, "headers"])
                             return
@@ -203,7 +205,7 @@ def handle_message(soc, message):
                         break
                     rowid += 1
                 num_headers = hex(num_headers)[2:]
-                num_headers = fill(num_headers, 2)
+                num_headers = blockchain.fill(num_headers, 2)
                 new_message = num_headers + new_message
                 send_message("universal", soc=soc, cargo=[new_message, "headers"])
             elif rowid == max_rowid:
@@ -271,13 +273,13 @@ def send_message(command, soc = None, cargo = None):
     if command == "version" or command == "version1":
         timestamp = hex(int(time()))[2:]
         best_height = hex(blockchain.height)[2:]
-        best_height = fill(best_height, 8)
+        best_height = blockchain.fill(best_height, 8)
         if command == "version1":
             addr_recv = cargo
         else:
             addr_recv = soc.getpeername()[0]
         addr_recv = encode_ip(addr_recv)
-        tr_port = fill(hex(port)[2:], 4)
+        tr_port = blockchain.fill(hex(port)[2:], 4)
         payload = bytes.fromhex(version + timestamp + best_height + addr_recv + tr_port)
         payload_lenght = hex(len(payload))[2:]
         header = create_header("version", payload_lenght)
@@ -285,9 +287,8 @@ def send_message(command, soc = None, cargo = None):
             return header + payload
         outbound.put(["send", [soc, header + payload]])
     elif command == "send":
-        msg, pub_key = cargo
-        msg = msg.encode("utf-8").hex()
-        payload = blockchain.create_tx(msg, pub_key)
+        msg, pub_key, msg_type = cargo
+        payload = blockchain.create_tx(msg_type ,msg, pub_key)
         blockchain.mempool.append(payload.hex())
         payload_lenght = hex(len(payload))[2:]
         header = create_header("transaction", payload_lenght)
@@ -321,13 +322,13 @@ def send_message(command, soc = None, cargo = None):
                 block_headers += blockchain.c.fetchone()[0]
                 rowid -= change
                 num_headers += 1
-        payload = bytes.fromhex(fill(hex(blockchain.chainwork)[2:], 64) + fill(hex(num_headers)[2:], 2) + block_headers + "0"*64)
+        payload = bytes.fromhex(blockchain.fill(hex(blockchain.chainwork)[2:], 64) + blockchain.fill(hex(num_headers)[2:], 2) + block_headers + "0"*64)
         payload_lenght = hex(len(payload))[2:]
         header = create_header("getheaders", payload_lenght)
         outbound.put(["send", [soc, header + payload]])
     elif command == "addr":
         if cargo == "init":
-            payload = bytes.fromhex("0001" + encode_ip(my_addr) + fill(hex(port)[2:], 4) + hex(int(time()))[2:])
+            payload = bytes.fromhex("0001" + encode_ip(my_addr) + blockchain.fill(hex(port)[2:], 4) + hex(int(time()))[2:])
         elif cargo != None:
             payload = bytes.fromhex(cargo)
         else:
@@ -342,12 +343,12 @@ def send_message(command, soc = None, cargo = None):
                 peer = soc.getpeername()
                 if node[0] != peer[0] and node[1] != peer[1]:
                     num_addr += 1
-                    payload = encode_ip(node[0]) + fill(hex(node[1])[2:], 4) + hex(node[2])[2:]
+                    payload = encode_ip(node[0]) + blockchain.fill(hex(node[1])[2:], 4) + hex(node[2])[2:]
                 elif len(ls_nodes) == 1:
                     return
                 if num_addr == 1000:
                     break
-            payload = bytes.fromhex(fill(hex(num_addr)[2:], 4) + payload)
+            payload = bytes.fromhex(blockchain.fill(hex(num_addr)[2:], 4) + payload)
         payload_lenght = hex(len(payload))[2:]
         header = create_header("addr", payload_lenght)
         if cargo == "broacast":
@@ -360,15 +361,7 @@ def send_message(command, soc = None, cargo = None):
 
 
 def create_header(command, payload_lenght):
-    return bytes.fromhex(fill(command.encode("utf-8").hex(), 24) + fill(payload_lenght, 8))
-
-
-def fill(entity, fill):
-    lenght = len(entity)
-    if lenght < fill:
-        miss = fill - lenght
-        entity = miss*"0" + entity
-    return entity
+    return bytes.fromhex(blockchain.fill(command.encode("utf-8").hex(), 24) + blockchain.fill(payload_lenght, 8))
 
 
 def encode_ip(ip):
@@ -379,7 +372,7 @@ def encode_ip(ip):
             print("neplatna adresa")
             return
         temp = hex(int(i))[2:]
-        addr += fill(temp, 2)
+        addr += blockchain.fill(temp, 2)
     return addr
 
 
@@ -567,17 +560,23 @@ try:
                 b, d = b
                 outbound.put(["connect", [b, d, send_message("version1", cargo=b)]])
             elif a == "send":
-                b,d = b
+                b, d, e = b
                 if b == "":
-                    display.put(list(blockchain.pub_keys.values()))
+                    display.put(blockchain.pub_keys)
                 else:
-                    cargo = [d, list(blockchain.pub_keys.keys())[b]]
+                    if e == "0":
+                        e = "02"
+                    else:
+                        e = "01"
+                    cargo = [d, blockchain.pub_keys[b][0], e]
                     send_message("send", cargo=cargo)
             elif a == "import":
                 b, d = b
                 blockchain.save_key(b, d)
+                cargo = ["", d, "00"]
+                send_message("send", cargo=cargo)
             elif a == "export":
-                display.put(blockchain.ver_key_str)
+                display.put(blockchain.public_key_hex)
             elif a == "lsimported":
                 display.put(blockchain.pub_keys)
             elif a == "lsnodes":

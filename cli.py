@@ -12,15 +12,19 @@ def cli(com, display, prnt):
             c = int(c)
             com.put([a, [b, c]])
         elif a == "send":
-            com.put([a, ["", ""]])
+            com.put([a, ["", "", ""]])
             while display.empty():
                 pass
             key_list = display.get()
             for i in key_list:
-                print(i)
+                v = "no"
+                if i[3] != "no":
+                    v = "yes"
+                print(f"{i[0]}: {i[1]} | encryption: {v}")
             b = int(input("zadaj cislo mena(0-n): "))
             c = input("zadaj spravu: ")
-            com.put([a, [b, c]])
+            d = input("sifrovat spravu (0-nie, 1-ano): ")
+            com.put([a, [b, c, d]])
         elif a == "import":
             b = input("zadaj kluc: ")
             c = input("zadaj meno: ")
@@ -35,8 +39,11 @@ def cli(com, display, prnt):
             while display.empty():
                 pass
             dict = display.get()
-            for i in list(dict.keys()):
-                print(f"{dict[i]}: {i}")
+            for i in dict:
+                v = "no"
+                if i[3] != "no":
+                    v = "yes"
+                print(f"{i[0]}: {i[1]} | encryption: {v}")
         elif a == "lsnodes":
             com.put([a, ""])
             while display.empty():
