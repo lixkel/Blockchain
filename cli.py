@@ -18,9 +18,9 @@ def cli(com, display, prnt):
             key_list = display.get()
             for i in key_list:
                 v = "no"
-                if i[3] != "no":
+                if key_list[i][1] != "no" or key_list[i][1] != "sent":
                     v = "yes"
-                print(f"{i[0]}: {i[1]} | encryption: {v}")
+                print(f"{key_list[i][0]}: {i} | encryption: {v}")
             b = int(input("zadaj cislo mena(0-n): "))
             c = input("zadaj spravu: ")
             d = input("sifrovat spravu (0-nie, 1-ano): ")
@@ -41,9 +41,9 @@ def cli(com, display, prnt):
             dict = display.get()
             for i in dict:
                 v = "no"
-                if i[3] != "no":
+                if dict[i][3] != "no" or key_list[i][1] != "sent":
                     v = "yes"
-                print(f"{i[0]}: {i[1]} | encryption: {v}")
+                print(f"{key_list[i][0]}: {i} | encryption: {v}")
         elif a == "lsnodes":
             com.put([a, ""])
             while display.empty():

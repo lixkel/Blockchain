@@ -568,7 +568,8 @@ try:
                         e = "02"
                     else:
                         e = "01"
-                    cargo = [d, blockchain.pub_keys[b][0], e]
+                    pub_key = list(blockchain.pub_keys.keys())[b]
+                    cargo = [d, pub_key, e]
                     send_message("send", cargo=cargo)
             elif a == "import":
                 b, d = b
