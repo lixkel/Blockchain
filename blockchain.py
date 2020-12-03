@@ -25,11 +25,13 @@ class Blockchain:
         if self.c.fetchone()[0] != 1:
             self.c.execute("""CREATE TABLE blockchain (
                 hash TEXT,
-                block TEXT)
+                block TEXT,
+                chainwork INTEGER,)
                 """)
             genesis = "000000010000000000000000000000000000000000000000000000000000000000000000801ab3730016697c66969993983e4ad1e4a4fba4044677f678c7b2a1ef8721c400000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff5F402B4000154a8001185374726f6ac3a1726e652073c3ba2075c5be20646f6d61215F44192Bc61e0e6ff566d2f37855ab3974a1a12d916e29f1fc7dc69a4b7c6a3ff62ea7b16e7b43da0ab812702140c2a3e59c4a9edc53e13db80b4091f4b4310ea7e20f7a2d600920457746a9982804e49aff8f50d90cdba6ad8b8b76e3df79fc79a6ff1af2fb07557fb300e250f961c18c7db098e85387388e292cf78dd8ddb784d6636ab754d7da9a675c5b2035dbea64a353666c05a07653fc9df2c1f717fd6cadf181cf962f29534d37466a47d7a368607ca025c1672309f2f69a40bc466111deaace"
             gen_hash = self.hash(genesis[:216])
-            self.c.execute("INSERT INTO blockchain VALUES (?,?);", (gen_hash, genesis))
+            gen_chainwork = int(2**256/int(genesis[136:200], 16))
+            self.c.execute("INSERT INTO blockchain VALUES (?,?,?);", (gen_hash, genesis, gen_chainwork))
             self.conn.commit()
         try:
             keyFile = open("keyFile", "r")
@@ -78,29 +80,12 @@ class Blockchain:
                 self.pub_keys[pair[0]] = [pair[1], pair[2]]
         except FileNotFoundError:
             pass
-        self.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
-        self.height = self.c.fetchone()[0]
-        self.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
-        self.target = self.c.fetchone()[1][136:200]
-        logging.debug(self.target)
-        try:
-            save_file = open("save", "r")
-            self.chainwork = int(bytes.fromhex(keyFile.read()))
-        except:
-            if 'save_file' in locals():
-                save_file.close()
-            save_file = open("save", "w")
-            self.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
-            max_rowid = self.c.fetchone()[0]
-            if max_rowid == 0:
-                return
-            self.chainwork = 0
-            for i in range(2, max_rowid+1):
-                self.c.execute("SELECT block FROM blockchain WHERE rowid = (?);", (i,))
-                block = self.c.fetchone()[0]
-                target = block[136:200]
-                self.chainwork += int(2**256/int(target, 16))
-            save_file.write(str(self.chainwork))
+        self.c.execute("SELECT rowid, * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+        entry = self.c.fetchone()
+        self.height = entry[0]
+        self.target = entry[2][136:200]
+        self.chainwork = entry[3]
+        logging.debug(f"height: {self.height}, target: {self.target}, chainwork: {self.chainwork}")
 
 
     def verify_block(self, block):
@@ -129,7 +114,7 @@ class Blockchain:
             if not self.verify_tx(tx, timestamp=block[200:208]):
                 logging.debug("block False")
                 return False
-            tx_hashes.append(self.hash(tx[2:]))
+            tx_hashes.append(self.hash(tx))
             index += tx_size
         merkle_root = self.merkle_tree(tx_hashes)
         if merkle_root != block[72:136]:
@@ -264,8 +249,8 @@ class Blockchain:
             msg = msg.encode("utf-8")
             if msg_type == "01":
                 for i in pub_keys:
-                    if rec_key in i:
-                        key = i[2]
+                    if rec_key in pub_keys[i]:
+                        key = pub_keys[i][2]
                 if key == "no":
                     print("s pouzivatelom este neprebehla vymena klucov")
                     logging.debug("neni key takze sa neda poslat encrypt msg")
@@ -339,36 +324,45 @@ class Blockchain:
                 if in_alter:
                     break
             if not in_blockchain and not in_orphans and not in_alter:
-                self.c.execute("SELECT rowid FROM blockchain WHERE hash = (?);", (new_block[8:72],))
+                self.c.execute("SELECT rowid, * FROM blockchain WHERE hash = (?);", (new_block[8:72],))
                 alter = self.c.fetchone()
                 if alter:
                     rowid = alter[0]
-                    new_chainwork = int(2**256/int(new_block[136:200], 16))
+                    new_chainwork = alter[3] + int(2**256/int(new_block[136:200], 16))
                     self.alter_chains.append(alter_chain(rowid, new_chainwork, int(time()), hash=new_block_hash, block=new_block))
                     return "appended"
                 for chain in self.alter_chains:
                     if chain.chain[-1][0] == new_block[8:72]:
-                        chain.chain.append([new_block_hash, new_block])
                         chain.chainwork += int(2**256/int(new_block[136:200], 16))
+                        chain.chain.append([new_block_hash, new_block, chain.chainwork])
                         if chain.chainwork > self.chainwork:
                             rowid = chain.parent + 1
                             alter_row = 0
                             alter_size = len(chain.chain)
-                            self.alter_chains.append(alter_chain(chain.parent, self.chainwork, int(time())))
+                            self.alter_chains.append(alter_chain(chain.parent, 0, int(time())))
                             self.c.execute("SELECT MAX(rowid) FROM blockchain;")
                             max_rowid = self.c.fetchone()[0]
                             while rowid >= max_rowid and alter_row >= alter_size:
                                 self.c.execute("SELECT * FROM blockchain WHERE rowid = (?);", (rowid,))
                                 set = self.c.fetchone()
-                                self.alter_chains[-1].chain.append([set[0], set[1]])
-                                self.c.execute("UPDATE blockchain SET hash = (?) block = (?) WHERE rowid = (?);", (chain.chain[alter_row][0], chain.chain[alter_row][1], max_rowid))
+                                self.alter_chains[-1].chain.append([set[0], set[1], set[2]])
+                                self.alter_chains[-1].chainwork = set[2]
+                                append_block = chain.chain[alter_row]
+                                self.c.execute("UPDATE blockchain SET hash = (?) block = (?) chainwork = (?) WHERE rowid = (?);", (append_block[0], append_block[1], append_block[2], max_rowid))
+                                self.block_content(append_block[1])
                                 rowid += 1
                                 alter_row += 1
                             while rowid <= max_rowid:
+                                self.c.execute("SELECT * FROM blockchain WHERE rowid = (?);", (rowid,))
+                                set = self.c.fetchone()
+                                self.alter_chains[-1].chain.append([set[0], set[1], set[2]])
+                                self.alter_chains[-1].chainwork = set[2]
                                 self.c.execute("DELETE FROM blockchain WHERE rowid=(?)", (rowid,))
                                 rowid += 1
                             while alter_row < alter_size:
-                                self.c.execute("INSERT INTO blockchain VALUES (?,?);", (chain.chain[alter_row][0], chain.chain[alter_row][1]))
+                                append_block = chain.chain[alter_row]
+                                self.c.execute("INSERT INTO blockchain VALUES (?,?,?);", (append_block[0], append_block[1], append_block[2]))
+                                self.block_content(append_block[1])
                                 alter_row += 1
                             self.chainwork = chain.chainwork
                             self.alter_chains.remove(chain)
@@ -394,11 +388,11 @@ class Blockchain:
         if sync and -360 <= int(time()) - new_block[208:216] <= 360:
             logging.debug("append bad block timestamp")
             return False
-        self.c.execute("INSERT INTO blockchain VALUES (?,?);", (new_block_hash, new_block))
-        self.conn.commit()
-        self.block_content()
-        self.height += 1
         self.chainwork += int(2**256/int(block_target, 16))
+        self.c.execute("INSERT INTO blockchain VALUES (?,?,?);", (new_block_hash, new_block, self.chainwork))
+        self.conn.commit()
+        self.block_content(new_block)
+        self.height += 1
         if self.height % 10 == 0:
             logging.debug("append calc_height")
             self.calc_target()

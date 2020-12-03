@@ -6,4 +6,4 @@ class alter_chain:
         if hash == None:
             self.chain = []
         else:
-            self.chain = [[hash, block]]
+            self.chain = [[hash, block, chainwork]]
