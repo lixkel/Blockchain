@@ -8,8 +8,9 @@ class Blockchain:
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.ciphers import Cipher, modes
         from cryptography.hazmat.primitives.ciphers.algorithms import ChaCha20
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
-        global time, urandom, alter_chain, sha256, serialization, Cipher, modes, ChaCha20, Ed25519PrivateKey, Ed25519PublicKey
+        global time, urandom, alter_chain, sha256, serialization, Cipher, modes, ChaCha20, Ed25519PrivateKey, Ed25519PublicKey, X25519PrivateKey, X25519PublicKey
         global logging
         logging = log
         self.version = version
@@ -26,7 +27,7 @@ class Blockchain:
             self.c.execute("""CREATE TABLE blockchain (
                 hash TEXT,
                 block TEXT,
-                chainwork INTEGER,)
+                chainwork INTEGER)
                 """)
             genesis = "000000010000000000000000000000000000000000000000000000000000000000000000801ab3730016697c66969993983e4ad1e4a4fba4044677f678c7b2a1ef8721c400000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff5F402B4000154a8001185374726f6ac3a1726e652073c3ba2075c5be20646f6d61215F44192Bc61e0e6ff566d2f37855ab3974a1a12d916e29f1fc7dc69a4b7c6a3ff62ea7b16e7b43da0ab812702140c2a3e59c4a9edc53e13db80b4091f4b4310ea7e20f7a2d600920457746a9982804e49aff8f50d90cdba6ad8b8b76e3df79fc79a6ff1af2fb07557fb300e250f961c18c7db098e85387388e292cf78dd8ddb784d6636ab754d7da9a675c5b2035dbea64a353666c05a07653fc9df2c1f717fd6cadf181cf962f29534d37466a47d7a368607ca025c1672309f2f69a40bc466111deaace"
             gen_hash = self.hash(genesis[:216])
@@ -55,7 +56,7 @@ class Blockchain:
                                 format=serialization.PrivateFormat.Raw,
                                 encryption_algorithm=serialization.NoEncryption()
                                 )
-            keyFile.write(private_bytes.hex() + "\n" + dh_private_key.hex())
+            keyFile.write(private_bytes.hex() + "\n" + dh_private_bytes.hex())
         keyFile.close()
         self.public_key = self.private_key.public_key()
         self.public_key_hex = self.public_key.public_bytes(
@@ -85,7 +86,7 @@ class Blockchain:
         self.height = entry[0]
         self.target = entry[2][136:200]
         self.chainwork = entry[3]
-        logging.debug(f"height: {self.height}, target: {self.target}, chainwork: {self.chainwork}")
+        print(f"height: {self.height}, target: {self.target}, chainwork: {self.chainwork}")
 
 
     def verify_block(self, block):
@@ -93,7 +94,7 @@ class Blockchain:
         block_target = int(block_target, 16)
         header_hash = self.hash(block[:216])
         if not int(header_hash, 16) <= block_target:
-            logging.debug("block False")
+            print("block False")
             return False
         num_tx = int(block[216:218], 16)
         index = 218
@@ -112,47 +113,50 @@ class Blockchain:
             tx_size = index + message_size + tx_remaining
             tx = block[index:tx_size]
             if not self.verify_tx(tx, timestamp=block[200:208]):
-                logging.debug("block False")
+                print("block False")
                 return False
             tx_hashes.append(self.hash(tx))
             index += tx_size
         merkle_root = self.merkle_tree(tx_hashes)
         if merkle_root != block[72:136]:
-            logging.debug("block False")
+            print("block False")
             return False
-        logging.debug("block True")
+        print("block True")
         return True
 
 
     def verify_tx(self, tx, timestamp=None):
         global Ed25519PublicKey
         if tx in self.mempool or tx in self.valid_tx:
-            logging.debug("tx True already have")
+            print("tx True already have")
             return "already"
         sig = bytes.fromhex(tx[-128:])
         sender_pub_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(tx[-192:-128]))
         try:
             sender_pub_key.verify(sig, bytes.fromhex(tx[:-128]))
         except:
-            logging.debug("tx sig False")
+            print("tx sig False")
             return False
         tx_remaining = 270
         if tx[:2] == "01":
             tx_remaining += 32
         msg_size = len(tx) - tx_remaining
-        tx_timestamp = tx[6+msg_size:14+msg_size]
+        tx_timestamp = int(tx[6+msg_size:14+msg_size], 16)
         if timestamp:
             timestamp = int(timestamp, 16)
-            if not -1800 =< timestamp - tx_timestamp <= 1800:
+            if not -1800 <= timestamp - tx_timestamp <= 1800:
                 return False
             #ked bude temp fork a dojdu dva bloky s tymi istymi tx tak ich budem ma t dva krat v db
-        elif not -1800 =< int(time()) - tx_timestamp <= 1800:
+        elif not -1800 <= int(time()) - tx_timestamp <= 1800:
             return False
-        logging.debug("tx True")
+        print("tx True")
         return True
 
 
     def block_content(self, block):
+        num_tx = int(block[216:218], 16)
+        index = 218
+        tx_remaining = 270
         for i in range(num_tx):
             tx_type = block[index:index+2]
             if tx_type == "00":
@@ -163,13 +167,13 @@ class Blockchain:
                     message_size += 32
             tx_size = index + message_size + tx_remaining
             tx = block[index:tx_size]
-            self.tx_content()
+            self.tx_content(tx)
 
 
     def tx_content(self, tx):
         if tx[-256:-192] == self.public_key_hex:
             type = tx[:2]
-            peer_pub_key = [-192:-128]
+            peer_pub_key = tx[-192:-128]
             try:
                 user = pub_keys[peer_pub_key]
             except KeyError:
@@ -204,7 +208,8 @@ class Blockchain:
                 print(f"e {user[0]}: {msg}")
             elif type == "02":
                 msg_size = int(tx[2:6], 16)
-                print(f"{user[0]}: {bytes.fromhex(tx[4:msg_size]).decode("utf-8")}")
+                msg = bytes.fromhex(tx[4:msg_size]).decode("utf-8")
+                print(f"{user[0]}: {msg}")
 
 
     def hash(self, tx):
@@ -212,7 +217,7 @@ class Blockchain:
         return sha256(bytes.fromhex(tx)).hexdigest()
 
 
-    def fill(entity, fill):
+    def fill(self, entity, fill):
         lenght = len(entity)
         if lenght < fill:
             miss = fill - lenght
@@ -244,7 +249,8 @@ class Blockchain:
     def create_tx(self, msg_type, msg, rec_key):
         global time, urandom
         if msg_type == "00":
-            tx = dh_public_key_hex + hex(int(time()))[2:] + rec_key + public_key_hex
+            tx = self.dh_public_key_hex + hex(int(time()))[2:] + rec_key + self.public_key_hex
+            tx = bytes.fromhex(tx)
         else:
             msg = msg.encode("utf-8")
             if msg_type == "01":
@@ -253,7 +259,6 @@ class Blockchain:
                         key = pub_keys[i][2]
                 if key == "no":
                     print("s pouzivatelom este neprebehla vymena klucov")
-                    logging.debug("neni key takze sa neda poslat encrypt msg")
                 nonce = urandom(16)
                 algorithm = ChaCha20(key, nonce)
                 cipher = Cipher(algorithm, mode=None)
@@ -269,14 +274,14 @@ class Blockchain:
                     tx = nonce.hex() + tx
                 tx = bytes.fromhex(tx)
             else:#tu treba dat aj
-                logging.debug("sprava je prilis velka")
+                print("sprava je prilis velka")
         signature = self.private_key.sign(tx)
         tx = tx + signature
         #na toto verify sa treba pozret ked dorobim verify_tx
         if self.verify_tx(tx.hex()) == True:
             return tx
         else:
-            logging.debug("vytvorena tx je zla")
+            print("vytvorena tx je zla")
         return False
 
 
@@ -370,7 +375,7 @@ class Blockchain:
                             self.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
                             self.height = self.c.fetchone()[0]
                             if self.height % 10 == 0:
-                                logging.debug("append calc_height")
+                                print("append calc_height")
                                 self.calc_target()
                         return "appended"
                 try:
@@ -385,8 +390,8 @@ class Blockchain:
         block_target = new_block[136:200]
         if block_target != self.target:
             return False
-        if sync and -360 <= int(time()) - new_block[208:216] <= 360:
-            logging.debug("append bad block timestamp")
+        if sync and -360 <= int(time()) - int(new_block[208:216], 16) <= 360:
+            print("append bad block timestamp")
             return False
         self.chainwork += int(2**256/int(block_target, 16))
         self.c.execute("INSERT INTO blockchain VALUES (?,?,?);", (new_block_hash, new_block, self.chainwork))
@@ -394,7 +399,7 @@ class Blockchain:
         self.block_content(new_block)
         self.height += 1
         if self.height % 10 == 0:
-            logging.debug("append calc_height")
+            print("append calc_height")
             self.calc_target()
         return True
 
@@ -418,8 +423,8 @@ class Blockchain:
         elif len(new_target) > 64:
             new_target = "f" * 64
         self.target = new_target
-        logging.debug(f"difficulty change: {change}")
-        logging.debug(f"new target: {self.target}")
+        print(f"difficulty change: {change}")
+        print(f"new target: {self.target}")
 
 
     def check_orphans(self, param):#berie ako parameter hash blocku ku ktoremu pozrie ci v orphans nema child a potom zavola append a znovu check_orphans

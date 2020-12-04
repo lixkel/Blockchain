@@ -23,22 +23,22 @@ def handle_message(soc, message):
     global my_addr, con_sent
     command = bytes.fromhex(message[:24].lstrip("0")).decode("utf-8")
     payload = message[32:]
-    logging.debug(command)
+    print(command)
     if command == "version":
         if nodes[soc.getpeername()].expecting == "version":
             node_version = payload[:8]
             if node_version != version:
                 return
             if int(node_version, 16) > int(version, 16):
-                logging.debug("old version")
+                print("old version")
                 print("vyzera to ze mas zastaralu verziu")
             best_height = int(payload[-20:-12], 16)
             nodes[soc.getpeername()].best_height = best_height
             my_addr = decode_ip(payload[-12:-4])
-            logging.debug(f"my_addr: {my_addr}")
+            print(f"my_addr: {my_addr}")
             tr_port = int(payload[-4:], 16)
             nodes[soc.getpeername()].port = tr_port
-            logging.debug(f"node property: {tr_port}")
+            print(f"node property: {tr_port}")
             timestamp = int(payload[8:24], 16)
             time_difference = int(int(time()) - timestamp)
             if -300 < time_difference > 300:
@@ -77,7 +77,7 @@ def handle_message(soc, message):
         else:
             ban_check(soc.getpeername())
     elif command == "headers":
-        logging.debug(f"headers msg: {payload}")
+        print(f"headers msg: {payload}")
         if payload == "00":
             sync = [True, 0, 0]
             return
@@ -103,7 +103,7 @@ def handle_message(soc, message):
         index = 2
         for i in range(num_headers):
             header_hash = payload[index:index+64]
-            logging.debug(f"getblocks hash: {header_hash}")
+            print(f"getblocks hash: {header_hash}")
             blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash,))
             result = blockchain.c.fetchone()
             if result:
@@ -113,13 +113,13 @@ def handle_message(soc, message):
                 print("dojebana picovina")
             index += 64
     elif command == "block":
-        logging.debug(f"new block: {payload}")
+        print(f"new block: {payload}")
         block_hash = blockchain.hash(payload[:216])
         expec_blocks -= 1
-        logging.debug(f"expec_blocks: {expec_blocks}")
+        print(f"expec_blocks: {expec_blocks}")
         if blockchain.verify_block(payload):
             appended = blockchain.append(payload, sync[0])
-            logging.debug(f"block appended: {appended}")
+            print(f"block appended: {appended}")
             if appended == "orphan":
                 new_message = blockchain.fill("01" + payload[8:72])
                 send_message("universal", soc=soc, cargo=[new_message, "getblocks"])
@@ -138,9 +138,9 @@ def handle_message(soc, message):
                 return
         else:
             ban_check(soc.getpeername())
-        logging.debug(f"sync: {sync}")
+        print(f"sync: {sync}")
         if sync[0] == False and expec_blocks == 0:
-            logging.debug("block posielam sync")
+            print("block posielam sync")
             send_message("sync", soc=soc)
             return
         if not sync[0]:
@@ -157,12 +157,12 @@ def handle_message(soc, message):
         new_message = num_headers + headers
         send_message("broadcast", soc=soc.getpeername(),  cargo=[new_message, "headers"])
     elif command == "getheaders":
-        logging.debug(f"getheaders sync: {sync}")
+        print(f"getheaders sync: {sync}")
         if not sync[0] and sync[2] == soc.getpeername():
             sync = [True, 0, 0]
         chainwork = int(payload[:64], 16)
         if blockchain.chainwork < chainwork:#tu by sa potom dal dat ze expect sync ak to budem chciet robit cez
-            logging.debug("node ma vacsi chainwork")
+            print("node ma vacsi chainwork")
             send_message("sync", soc=soc)
             return
         num_hash = int(payload[64:66])
@@ -184,8 +184,8 @@ def handle_message(soc, message):
                 rowid = rowid[0]
             blockchain.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
             max_rowid = blockchain.c.fetchone()[0]
-            logging.debug(f"rowid: {rowid}")
-            logging.debug(f"maxrowid: {max_rowid}")
+            print(f"rowid: {rowid}")
+            print(f"maxrowid: {max_rowid}")
             if rowid and rowid != max_rowid:
                 new_message = ""
                 num_headers = 0
@@ -220,12 +220,12 @@ def handle_message(soc, message):
             ban_check(soc.getpeername())
             return
         index = 4
-        logging.debug(f"my addr:{my_addr}, {port}")
+        print(f"my addr:{my_addr}, {port}")
         for i in range(num_addr):
             node_ip = decode_ip(payload[index:index+8])
             node_port = int(payload[index+8:index+12], 16)
             node_timestamp = int(payload[index+12:index+20], 16)
-            logging.debug(f"node: {node_ip}, {node_port}, {node_timestamp}")
+            print(f"node: {node_ip}, {node_port}, {node_timestamp}")
             if (node_ip, node_port) in hardcoded_nodes:
                 continue
             if node_ip == "127.0.0.1" or node_ip == "0.0.0.0":
@@ -233,7 +233,7 @@ def handle_message(soc, message):
             index += 20
             c.execute("SELECT * FROM nodes WHERE addr = (?) AND port = (?);", (node_ip, node_port))
             query = c.fetchone()
-            logging.debug(f"query {query}")
+            print(f"query {query}")
             if (node_ip != my_addr or node_port != port) and query == None:
                 c.execute("INSERT INTO nodes VALUES (?,?,?);", (node_ip, node_port, node_timestamp))
             elif (node_ip != my_addr or node_port != port) and query != None:
@@ -252,7 +252,7 @@ def handle_message(soc, message):
                             send_message("addr", soc=i.socket, cargo=payload)
                     break
                 while True:
-                    logging.debug("loop addr preposielanie")
+                    print("loop addr preposielanie")
                     first = randint(0, len(nodes)-1)
                     second = randint(0, len(nodes)-1)
                     if first != second and address != list(nodes.values())[first].address and address != list(nodes.values())[second].address:
@@ -389,17 +389,17 @@ def decode_ip(ip):
 
 
 def ban_check(address):
-    logging.debug("bancheck")
+    print("bancheck")
     try:
-        logging.debug(f"ban nodes: {nodes}")
-        logging.debug(f"ban addr: {address}")
+        print(f"ban nodes: {nodes}")
+        print(f"ban addr: {address}")
         nodes[address].banscore += 1
         if nodes[address].banscore >= 10:
             c.execute("DELETE FROM nodes WHERE addr=(?) AND port=(?)", (address[0], address[1]))
             outbound.put(["close", address])
             ban_list.append(address)
     except KeyError:
-        logging.debug("ban_check key error")
+        print("ban_check key error")
         pass
 
 
@@ -484,14 +484,14 @@ if c.fetchall() == []:
             if not inbound.empty():
                 soc, message = inbound.get()
                 if message == "error":
-                    logging.debug("error")
+                    print("error")
                     break
                 handle_message(soc, message)
                 if message[:24] == "000000000000000061646472":
-                    logging.debug("msg je addr")
+                    print("msg je addr")
                     break
             if int(time()) - started > 15:
-                logging.debug("prekroceny cas")
+                print("prekroceny cas")
                 break
         if len(nodes) != 0:
             outbound.put(["close", list(nodes.values())[0].address])
@@ -510,8 +510,8 @@ try:
             if len(nodes) == 0 and int(time()) % 5 == 0 and int(time()) != prev_time:
                 prev_time = int(time())
                 c.execute("SELECT * FROM nodes;")
-                logging.debug(f"con_sent: {con_sent}")
-                logging.debug(c.fetchall())
+                print(f"con_sent: {con_sent}")
+                print(c.fetchall())
                 print("connecting...")
             if not con_sent:
                 connect()#mozno by bolo lepsie spravit init connect v loope pred tymto
@@ -525,10 +525,11 @@ try:
                 handle_message(soc, message)
         if not mined.empty():
             new_block = mined.get()
-            logging.debug(f"new block mined: {new_block}")
+            print(f"new block mined: {new_block}")
             new_block_hash = blockchain.hash(new_block[:216])
             blockchain.append(new_block, sync[0])
-            send_message("broadcast", cargo=["01"+new_block_hash, "headers"])
+            message = "01" + new_block_hash
+            send_message("broadcast", cargo=[message, "headers"])
             start_mining()
         if int(time()) - stime > 1800:
             num_time += 1
@@ -554,8 +555,8 @@ try:
                 sync = [True, 0, 0]
         if not com.empty():
             a, b = com.get()
-            logging.debug(f"cli a: {a}")
-            logging.debug(f"cli b: {b}")
+            print(f"cli a: {a}")
+            print(f"cli b: {b}")
             if a == "con":
                 b, d = b
                 outbound.put(["connect", [b, d, send_message("version1", cargo=b)]])
@@ -574,7 +575,7 @@ try:
             elif a == "import":
                 b, d = b
                 blockchain.save_key(b, d)
-                cargo = ["", d, "00"]
+                cargo = ["", b, "00"]
                 send_message("send", cargo=cargo)
             elif a == "export":
                 display.put(blockchain.public_key_hex)
@@ -586,7 +587,7 @@ try:
                 if not sync[0]:
                     print("este niesi sync")
                     continue
-                logging.debug("minujeme")
+                print("minujeme")
                 start_mining()
                 mining = threading.Thread(target=mine, args=(mined, to_mine))
                 mining.start()
@@ -613,7 +614,7 @@ try:
                     #mining.terminate()
                 break
 
-except Exception as e:
+except KeyError as e:
     print(e)
     logging.error(e)
     outbound.put(["end", []])
