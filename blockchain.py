@@ -1,22 +1,25 @@
 class Blockchain:
-    def __init__(self, version, prnt, log):
+    def __init__(self, version, send_message, log):
         import sqlite3
         from time import time
         from os import urandom
         from hashlib import sha256
         from alter_chain import alter_chain
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
         from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.hashes import SHA256
         from cryptography.hazmat.primitives.ciphers import Cipher, modes
+        from cryptography.hazmat.backends.openssl.backend import backend
         from cryptography.hazmat.primitives.ciphers.algorithms import ChaCha20
         from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X25519PublicKey
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
-        global time, urandom, alter_chain, sha256, serialization, Cipher, modes, ChaCha20, Ed25519PrivateKey, Ed25519PublicKey, X25519PrivateKey, X25519PublicKey
+        global time, urandom, alter_chain, sha256, serialization, Cipher, modes, ChaCha20, Ed25519PrivateKey, Ed25519PublicKey, X25519PrivateKey, X25519PublicKey, HKDF, SHA256, backend
         global logging
         logging = log
         self.version = version
-        self.prnt = prnt
         self.conn = sqlite3.connect("blockchain.db")
         self.c = self.conn.cursor()
+        self.send_message = send_message
         self.mempool = []
         self.valid_tx = []
         self.pub_keys = {}
@@ -112,7 +115,7 @@ class Blockchain:
                     message_size += 32
             tx_size = index + message_size + tx_remaining
             tx = block[index:tx_size]
-            if not self.verify_tx(tx, timestamp=block[200:208]):
+            if self.verify_tx(tx, timestamp=block[200:208]) != True:
                 print("block False")
                 return False
             tx_hashes.append(self.hash(tx))
@@ -127,8 +130,13 @@ class Blockchain:
 
     def verify_tx(self, tx, timestamp=None):
         global Ed25519PublicKey
-        if tx in self.mempool or tx in self.valid_tx:
+        if tx in self.mempool:
             print("tx True already have")
+            return "already"
+        elif tx in self.valid_tx:
+            print("tx already in valid_tx")
+            if timestamp:#ak vola turo funkciu verify_block
+                return False#aby v blockchaine nemohli byt dve tie iste tx
             return "already"
         sig = bytes.fromhex(tx[-128:])
         sender_pub_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(tx[-192:-128]))
@@ -137,11 +145,7 @@ class Blockchain:
         except:
             print("tx sig False")
             return False
-        tx_remaining = 270
-        if tx[:2] == "01":
-            tx_remaining += 32
-        msg_size = len(tx) - tx_remaining
-        tx_timestamp = int(tx[6+msg_size:14+msg_size], 16)
+        tx_timestamp = int(tx[-264:-256], 16)
         if timestamp:
             timestamp = int(timestamp, 16)
             if not -1800 <= timestamp - tx_timestamp <= 1800:
@@ -167,48 +171,62 @@ class Blockchain:
                     message_size += 32
             tx_size = index + message_size + tx_remaining
             tx = block[index:tx_size]
-            self.tx_content(tx)
+            if tx in self.mempool:
+                self.mempool.remove(tx)
+                self.valid_tx.append(tx)
+            elif tx in self.valid_tx:#pri temp forku by sa toto dalo obist ale to budem riesit asi pri ui verzii
+                pass
+            else:
+                self.tx_content(tx)
 
 
     def tx_content(self, tx):
         if tx[-256:-192] == self.public_key_hex:
-            type = tx[:2]
+            tx_type = tx[:2]
+            print(f"{tx_type}")
             peer_pub_key = tx[-192:-128]
             try:
-                user = pub_keys[peer_pub_key]
+                user = self.pub_keys[peer_pub_key]
             except KeyError:
                 self.save_key(peer_pub_key)
-                user = pub_keys[peer_pub_key]
-            if type == "00":
-                dh_peer_key = bytes.fromhex(tx[2:66])
-                shared_key = private_key.exchange(dh_peer_key)
+                user = self.pub_keys[peer_pub_key]
+            print(f"user: {user}")
+            if tx_type == "00":
+                print("som v 00")
+                dh_peer_key = X25519PublicKey.from_public_bytes(bytes.fromhex(tx[2:66]))
+                shared_key = self.dh_private_key.exchange(dh_peer_key)
                 derived_key = HKDF(
-                                algorithm=hashes.SHA256(),
+                                algorithm=SHA256(),
                                 length=32,
                                 salt=None,
                                 info=b'blockchain',
+                                backend=backend,
                                 ).derive(shared_key)
                 if user[1] != "sent":
-                    send_message("send", cargo=["", peer_pub_key, "00"])
-                pub_keys[peer_pub_key][2] = derived_key.hex()
-            elif type == "01":
-                nonce = tx[2:34]
+                    self.send_message("send", cargo=["", peer_pub_key, "00"])
+                self.pub_keys[peer_pub_key][1] = derived_key.hex()
+                print("posuvam do edit key files")
+                self.edit_key_file(peer_pub_key, derived_key.hex())
+            elif tx_type == "01":
+                nonce = bytes.fromhex(tx[2:34])
                 msg_size = int(tx[34:38], 16)
+                msg = bytes.fromhex(tx[38:msg_size+38])
                 if user[1] == "no" or user[1] == "sent":
                     if user[0] == "__unknown" and user[1] == "no":
-                        del pub_keys[peer_pub_key]
+                        self.del_pub_key(peer_pub_key)
+                        del self.pub_keys[peer_pub_key]
                     print("sifrovana sprava ale neprebehla vymena klucov")
                     return False
-                encryption_key = user[1]
+                encryption_key = bytes.fromhex(user[1])
                 algorithm = ChaCha20(encryption_key, nonce)
-                cipher = Cipher(algorithm, mode=None)
+                cipher = Cipher(algorithm, mode=None, backend=backend)
                 decryptor = cipher.decryptor()
-                msg = decryptor.update(ct)
+                msg = decryptor.update(msg)
                 msg = msg.decode("utf-8")
                 print(f"e {user[0]}: {msg}")
-            elif type == "02":
+            elif tx_type == "02":
                 msg_size = int(tx[2:6], 16)
-                msg = bytes.fromhex(tx[4:msg_size]).decode("utf-8")
+                msg = bytes.fromhex(tx[6:msg_size+6]).decode("utf-8")
                 print(f"{user[0]}: {msg}")
 
 
@@ -240,25 +258,59 @@ class Blockchain:
         return hashes[0]
 
     def save_key(self, new_key, nickname="__unknown"):
+        enc_key = "no"
+        if nickname != "__unknown":
+            enc_key = "sent"
         file = open("pubKeyFile", "a")
-        file.write(f"{new_key} {nickname} no\n")
-        self.pub_keys[new_key] = [nickname, "no"]
+        file.write(f"{new_key} {nickname} {enc_key}\n")
+        self.pub_keys[new_key] = [nickname, enc_key]
         file.close()
+
+
+    def edit_key_file(self, pub_key, new_value,):
+        file = open("pubKeyFile", "r")
+        all_keys = file.read().split("\n")[:-1]
+        file.close()
+        file = open("pubKeyFile", "w")
+        for i in all_keys:
+            pair = i.split()
+            if pair[0] == pub_key:
+                file.write(f"{pair[0]} {pair[1]} {new_value}\n")
+            else:
+                file.write(i + "\n")
+
+
+    def del_pub_key(self, pub_key):
+        file = open("pubKeyFile", "r")
+        all_keys = file.read().split("\n")[:-1]
+        file.close()
+        file = open("pubKeyFile", "w")
+        for i in all_keys:
+            pair = i.split()
+            if pair[0] == pub_key:
+                continue
+            file.write(i + "\n")
 
 
     def create_tx(self, msg_type, msg, rec_key):
         global time, urandom
         if msg_type == "00":
-            tx = self.dh_public_key_hex + hex(int(time()))[2:] + rec_key + self.public_key_hex
+            tx = "00" + self.dh_public_key_hex + hex(int(time()))[2:] + rec_key + self.public_key_hex
             tx = bytes.fromhex(tx)
         else:
             msg = msg.encode("utf-8")
             if msg_type == "01":
-                for i in pub_keys:
-                    if rec_key in pub_keys[i]:
-                        key = pub_keys[i][2]
-                if key == "no":
-                    print("s pouzivatelom este neprebehla vymena klucov")
+                print(f"rec_key: {rec_key}")
+                for i in self.pub_keys:
+                    print(f"{i}: {self.pub_keys[i]}")
+                    if rec_key == i:
+                        print()
+                        key = self.pub_keys[i][1]
+                        if key == "no" or  key == "sent":
+                            print("s pouzivatelom este neprebehla vymena klucov")
+                            return
+                        key = bytes.fromhex(key)
+                        break
                 nonce = urandom(16)
                 algorithm = ChaCha20(key, nonce)
                 cipher = Cipher(algorithm, mode=None)
@@ -267,11 +319,12 @@ class Blockchain:
             msg = msg.hex()
             if len(msg) <= 1000:
                 msg_size = self.fill(hex(len(msg))[2:], 4)
-                msg_size = bytes.fromhex(msg_size)
                 timestamp = hex(int(time()))[2:]
                 tx = msg_size + msg + timestamp + rec_key + self.public_key_hex
                 if msg_type == "01":
-                    tx = nonce.hex() + tx
+                    tx = "01" + nonce.hex() + tx
+                else:
+                    tx = "02" + tx
                 tx = bytes.fromhex(tx)
             else:#tu treba dat aj
                 print("sprava je prilis velka")

@@ -1,0 +1,34 @@
+00
+x25519 Diffie-Hellman key exchange:
+
+00 - type of transaction (1 Byte)
+29c439c35d03757de49091ad03ddee74626e06164d608cb3a1370ce36681e163 - x25519 publick key (32 Bytes)
+5F44192B - transaction timestamp (4 Bytes)
+bb03a30a81630d8447b38c7ebcdd0fbde3c04cb454fb4cad21ce98aaa375a827 - Public key of receiver (32 Bytes)
+35f7319b55185034598c724e59999cd971eeec93f48a9d1b3470501e2d8821dd - Public key of sender (32 Bytes)
+22e4502357641236fe8815a6b2708ee1a1261ff136fa3f43cfb048e88ea49b9c8cd3f53c349fafcca6aac6a492767f3df3839bc309c3ca66bb6da143565f3c0e - signature (64 Bytes)
+
+
+01
+message encrypted with AES256:
+
+01 - type of transaction (1 Byte)
+f24ee471ab278a14bf9f44395fb21ab4 - nonce (16 Bytes)
+0018 - size of the message (2 Bytes)
+5374726f6ac3a1726e652073c3ba2075c5be20646f6d6121 - content of the message (variable max 255 Bytes)
+5F44192B - transaction timestamp (4 Bytes)
+bb03a30a81630d8447b38c7ebcdd0fbde3c04cb454fb4cad21ce98aaa375a827 - Public key of receiver (32 Bytes)
+35f7319b55185034598c724e59999cd971eeec93f48a9d1b3470501e2d8821dd - Public key of sender (32 Bytes)
+22e4502357641236fe8815a6b2708ee1a1261ff136fa3f43cfb048e88ea49b9c8cd3f53c349fafcca6aac6a492767f3df3839bc309c3ca66bb6da143565f3c0e - signature (64 Bytes)
+
+
+02
+unencrypted message:
+
+02 - type of transaction (1 Byte)
+0018 - size of the message (2 Bytes)
+5374726f6ac3a1726e652073c3ba2075c5be20646f6d6121 - content of the message (variable max 255 Bytes)
+5F44192B - transaction timestamp (4 Bytes)
+bb03a30a81630d8447b38c7ebcdd0fbde3c04cb454fb4cad21ce98aaa375a827 - Public key of receiver (32 Bytes)
+35f7319b55185034598c724e59999cd971eeec93f48a9d1b3470501e2d8821dd - Public key of sender (32 Bytes)
+22e4502357641236fe8815a6b2708ee1a1261ff136fa3f43cfb048e88ea49b9c8cd3f53c349fafcca6aac6a492767f3df3839bc309c3ca66bb6da143565f3c0e - signature (64 Bytes)

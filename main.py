@@ -67,8 +67,10 @@ def handle_message(soc, message):
             if result == True:
                 #mal by som to spreavit tak aby sa checkovalo len raz ci je tx v mempool
                 #vymazava sa z mempoolu?
+                print(payload)
                 blockchain.valid_tx.append(payload)
                 blockchain.mempool.append(payload)
+                blockchain.tx_content(payload)
                 send_message("broadcast", soc=soc.getpeername(), cargo=[payload, "transaction"])
             elif result == "already":
                 pass
@@ -291,6 +293,7 @@ def send_message(command, soc = None, cargo = None):
         payload = blockchain.create_tx(msg_type ,msg, pub_key)
         blockchain.mempool.append(payload.hex())
         payload_lenght = hex(len(payload))[2:]
+        print("idem sendovat")
         header = create_header("transaction", payload_lenght)
         outbound.put(["broadcast", [soc, header + payload]])
     elif command == "broadcast":
@@ -461,7 +464,7 @@ sync = [True, 0, None]
 conn = sqlite3.connect("nodes.db")
 c = conn.cursor()
 logging.basicConfig(filename='blockchain.log', level=logging.DEBUG, format='%(threadName)s %(message)s', filemode="w")
-blockchain = Blockchain(version, prnt, logging)
+blockchain = Blockchain(version, send_message, logging)
 local_node = threading.Thread(target=p2p.start_node, args=(port, nodes, inbound, outbound, ban_list, logging))
 local_node.start()
 
@@ -490,7 +493,7 @@ if c.fetchall() == []:
                 if message[:24] == "000000000000000061646472":
                     print("msg je addr")
                     break
-            if int(time()) - started > 15:
+            if int(time()) - started > 10:
                 print("prekroceny cas")
                 break
         if len(nodes) != 0:
@@ -534,6 +537,9 @@ try:
         if int(time()) - stime > 1800:
             num_time += 1
             current_time = int(time())
+            for tx in blockchain.valid_tx:
+                if not -1800 <= current_time - int(tx[-264:-256], 16) <= 1800:
+                    blockchain.valid_tx.remove(tx)
             for i in list(nodes.values()):
                 c.execute("UPDATE nodes SET timestamp = (?) WHERE addr = (?) AND port = (?);", (i.lastrecv, i.address[0], i.port))
                 if current_time - i.lastrecv > 5400:
