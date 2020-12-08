@@ -3,7 +3,7 @@ def cli(com, display, prnt):
         if not prnt.empty():
             while not prnt.empty():
                 print(prnt.get())
-        a = input("zadaj daco: ")
+        a = input("zadaj daco(help): ")
         if a == "con":
             b = input("zadaj adresu: ")
             c = input("zadaj port (ak prazdne tak default): ")
@@ -21,9 +21,26 @@ def cli(com, display, prnt):
                 if key_list[i][1] != "no" or key_list[i][1] != "sent":
                     v = "yes"
                 print(f"{key_list[i][0]}: {i} | encryption: {v}")
-            b = int(input("zadaj cislo mena(0-n): "))
+            while True:
+                try:
+                    b = input("zadaj cislo mena(0-n, stop-ukoncit tento command): ")
+                    if b == "stop":
+                        break
+                    b = int(b)
+                    if 0 <= b < len(key_list):
+                        break
+                    else:
+                        print("zle zadane cislo")
+                except:
+                    print("mezadal si cislo")
+            if type(b) == type(""):
+                continue
             c = input("zadaj spravu: ")
-            d = input("sifrovat spravu (0-nie, 1-ano): ")
+            d = ""
+            while d != "0" and d != "1" and d != "stop":
+                d = input("sifrovat spravu (0-nie, 1-ano, stop-ukoncit tento command): ")
+            if d == "stop":
+                continue
             com.put([a, [b, c, d]])
         elif a == "import":
             b = input("zadaj kluc: ")
@@ -65,7 +82,17 @@ def cli(com, display, prnt):
         elif a == "highest":
             com.put([a, ""])
         elif a == "help":
-            print("\ncon\nsend\nimport\nexport\nlsimported\nlsnodes\nstart mining\nstop mining\nend\n")
+            print("""            con - manualne sa pripoj na node
+            send - posli spravu
+            import - importuj publick key
+            export - tvoj publick key
+            lsimported - list importnutych klucov
+            lsnodes - list prave pripojenych nodov
+            start mining
+            stop mining
+            highest - najvyssi block
+            sync - sync status
+            end - koniec programu""")
         elif a == "end":
             com.put([a, ""])
             break
