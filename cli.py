@@ -58,9 +58,9 @@ def cli(com, display, prnt):
             dict = display.get()
             for i in dict:
                 v = "no"
-                if dict[i][3] != "no" or key_list[i][1] != "sent":
+                if dict[i][1] != "no" or dict[i][1] != "sent":
                     v = "yes"
-                print(f"{key_list[i][0]}: {i} | encryption: {v}")
+                print(f"{dict[i][0]}: {i} | encryption: {v}")
         elif a == "lsnodes":
             com.put([a, ""])
             while display.empty():
@@ -71,18 +71,10 @@ def cli(com, display, prnt):
             com.put([a, ""])
         elif a == "stop mining":
             com.put([a, ""])
-        elif a == "sync":
-            com.put([a, ""])
-            while display.empty():
-                pass
-            for i in display.get():
-                print(f"{i.address}: {i.authorized}")
-            b = int(input("zadaj cislo mena(0-n): "))
-            com.put([a, b])
         elif a == "highest":
             com.put([a, ""])
         elif a == "help":
-            print("""            con - manualne sa pripoj na node
+            print("""\n            con - manualne sa pripoj na node
             send - posli spravu
             import - importuj publick key
             export - tvoj publick key
@@ -91,8 +83,7 @@ def cli(com, display, prnt):
             start mining
             stop mining
             highest - najvyssi block
-            sync - sync status
-            end - koniec programu""")
+            end - koniec programu\n""")
         elif a == "end":
             com.put([a, ""])
             break

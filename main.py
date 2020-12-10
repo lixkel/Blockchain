@@ -7,7 +7,6 @@ import threading
 from time import time
 from random import randint
 from multiprocessing import Queue, Process
-from ecdsa import SigningKey, VerifyingKey, SECP256k1
 
 import p2p
 from cli import cli
@@ -94,6 +93,7 @@ def handle_message(soc, message):
             blockchain.c.execute("SELECT * FROM blockchain WHERE hash = (?);", (header_hash,))
             result = blockchain.c.fetchone()
             if result == None:
+                print(f"requested: {header_hash}")
                 getblocks += header_hash
                 expec_blocks += 1
                 num_hashes += 1
@@ -123,8 +123,9 @@ def handle_message(soc, message):
             appended = blockchain.append(payload, sync[0])
             print(f"block appended: {appended}")
             if appended == "orphan":
-                new_message = blockchain.fill("01" + payload[8:72])
+                new_message = "01" + payload[8:72]
                 send_message("universal", soc=soc, cargo=[new_message, "getblocks"])
+                expec_blocks += 1
                 return
             elif appended == "alrdgot":
                 return
@@ -140,6 +141,7 @@ def handle_message(soc, message):
                 return
         else:
             ban_check(soc.getpeername())
+            return
         print(f"sync: {sync}")
         if sync[0] == False and expec_blocks == 0:
             print("block posielam sync")
@@ -152,9 +154,10 @@ def handle_message(soc, message):
             start_mining()
         num_headers = 1
         headers = block_hash
-        for i in orphans:
-            headers += i
-            num_headers += 1
+        if 'orphans' in locals():
+            for i in orphans:
+                headers += i
+                num_headers += 1
         num_headers = blockchain.fill(hex(num_headers)[2:], 2)
         new_message = num_headers + headers
         send_message("broadcast", soc=soc.getpeername(),  cargo=[new_message, "headers"])
@@ -338,6 +341,7 @@ def send_message(command, soc = None, cargo = None):
             timestamp = int(time()) - 18000
             c.execute("SELECT * FROM nodes WHERE timestamp > ?;", (timestamp,))
             ls_nodes = c.fetchall()
+            print(f"ls_nodes addr: {ls_nodes}")
             if ls_nodes == []:
                 return
             num_addr = 0
@@ -431,6 +435,7 @@ def connect():
         return
     line = (query[0], query[1])
     if line not in node_list and line not in ban_list:
+        print(f"connectujem: {line}")
         outbound.put(["connect", [line[0], line[1], send_message("version1", cargo=line[0])]])
         con_sent = True
 
@@ -451,7 +456,7 @@ prev_time = int(time())
 port = 55555
 default_port = 55555
 con_sent = False
-hardcoded_nodes = (("192.168.1.101", 55555),)
+hardcoded_nodes = (("146.59.15.193", 55555),)
 inbound = Queue()
 outbound = Queue()
 to_mine = Queue()
@@ -464,7 +469,7 @@ sync = [True, 0, None]
 conn = sqlite3.connect("nodes.db")
 c = conn.cursor()
 logging.basicConfig(filename='blockchain.log', level=logging.DEBUG, format='%(threadName)s %(message)s', filemode="w")
-blockchain = Blockchain(version, send_message, logging)
+blockchain = Blockchain(version, send_message, sync, logging)
 local_node = threading.Thread(target=p2p.start_node, args=(port, nodes, inbound, outbound, ban_list, logging))
 local_node.start()
 
@@ -601,17 +606,11 @@ try:
                 if mining:
                     mining.terminate()
                     mining = None
-            elif a == "sync":
-                if b == "":
-                    display.put(list(nodes.values()))
-                else:
-                    sock = list(nodes.values())[b].socket
-                    send_message("sync", soc=sock)
             elif a == "highest":
                 blockchain.c.execute("SELECT * FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
                 row = blockchain.c.fetchone()
-                print(row[0])
-                print(row[1])
+                print(f"block hash: {row[0]}")
+                print(f"block: {row[1]}")
             elif a == "end":
                 #print(mining)
                 outbound.put(["end", []])

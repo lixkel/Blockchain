@@ -34,11 +34,14 @@ def main(nodes, inbound, outbound, ban_list):
                 new_message = receive_message(soc)
                 if not new_message:
                     sockets_list.remove(soc)
-                    for i in list(nodes.keys()):
-                        try:
-                            del nodes[soc.getpeername()]
-                        except:
-                            del nodes[i]
+                    try:#ked je new message false mozu sa stat 2 moznosti ze je error na packete alebo som len dostal close alebo b""
+                        del nodes[soc.getpeername()]#v prvom pripade toto fungovat nebude socket vyhodi error
+                    except:
+                        for i in list(nodes.keys()):
+                            try:
+                                nodes[i].getpeername()
+                            except:
+                                del nodes[i]
                 else:
                     if new_message != "error":
                         nodes[soc.getpeername()].lastrecv = int(time())
@@ -101,7 +104,8 @@ def send_message(soc, message, nodes):
             if sent == 0:
                 return False
             totalsent = totalsent + sent
-        nodes[soc.getpeername()].lastsend = int(time())
+        if message != b"close" or message != b"":
+            nodes[soc.getpeername()].lastsend = int(time())
         return True
     except socket.error as e:
         logging.debug(f"Error sending data: {e}")

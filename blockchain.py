@@ -1,5 +1,5 @@
 class Blockchain:
-    def __init__(self, version, send_message, log):
+    def __init__(self, version, send_message, sync1, log):
         import sqlite3
         from time import time
         from os import urandom
@@ -15,6 +15,8 @@ class Blockchain:
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
         global time, urandom, alter_chain, sha256, serialization, Cipher, modes, ChaCha20, Ed25519PrivateKey, Ed25519PublicKey, X25519PrivateKey, X25519PublicKey, HKDF, SHA256, backend
         global logging
+        global sync
+        sync = sync1
         logging = log
         self.version = version
         self.conn = sqlite3.connect("blockchain.db")
@@ -97,32 +99,35 @@ class Blockchain:
         block_target = int(block_target, 16)
         header_hash = self.hash(block[:216])
         if not int(header_hash, 16) <= block_target:
-            print("block False")
+            print("block invalid target")
             return False
         num_tx = int(block[216:218], 16)
+        if num_tx > 255:
+            print("block invalid prilis vela tx")
+            return False
         index = 218
         tx_remaining = 270
         tx_hashes = []
         for i in range(num_tx):
             tx_type = block[index:index+2]
-            if not tx_type in ["00", "01", "02"]:
-                return False
             if tx_type == "00":
                 message_size = 64-4
+            elif tx_type == "01":
+                message_size = int(block[index+34:index+38], 16) * 2
+                message_size += 32
             else:
                 message_size = int(block[index+2:index+6], 16) * 2
-                if tx_type == "01":
-                    message_size += 32
             tx_size = index + message_size + tx_remaining
             tx = block[index:tx_size]
-            if self.verify_tx(tx, timestamp=block[200:208]) != True:
-                print("block False")
+            if not self.verify_tx(tx, timestamp=block[200:208]):
+                print("block invalid tx")
                 return False
             tx_hashes.append(self.hash(tx))
             index += tx_size
         merkle_root = self.merkle_tree(tx_hashes)
         if merkle_root != block[72:136]:
-            print("block False")
+            print(block[72:136])
+            print("block merkle root invalid")
             return False
         print("block True")
         return True
@@ -130,6 +135,7 @@ class Blockchain:
 
     def verify_tx(self, tx, timestamp=None):
         global Ed25519PublicKey
+        print(tx)
         if tx in self.mempool:
             print("tx True already have")
             return "already"
@@ -138,6 +144,20 @@ class Blockchain:
             if timestamp:#ak vola turo funkciu verify_block
                 return False#aby v blockchaine nemohli byt dve tie iste tx
             return "already"
+        tx_type = tx[:2]
+        if not tx_type in ["00", "01", "02"]:
+            print(f"invalid tx type: {tx_type}")
+            return False
+        if tx_type == "00":
+            msg_size = 64-4
+        elif tx_type == "01":
+            msg_size = int(tx[34:38], 16) * 2
+            msg_size += 32
+        else:
+            msg_size = int(tx[2:6], 16) * 2
+        if msg_size > 2000:
+            print("msg size je moc velka")
+            return False
         sig = bytes.fromhex(tx[-128:])
         sender_pub_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(tx[-192:-128]))
         try:
@@ -178,6 +198,7 @@ class Blockchain:
                 pass
             else:
                 self.tx_content(tx)
+                self.valid_tx.append(tx)
 
 
     def tx_content(self, tx):
@@ -202,14 +223,14 @@ class Blockchain:
                                 info=b'blockchain',
                                 backend=backend,
                                 ).derive(shared_key)
-                if user[1] != "sent":
+                if user[1] != "sent" and sync[0] == True:#mozno by som nemal prijimat tx pocas syncovania
                     self.send_message("send", cargo=["", peer_pub_key, "00"])
                 self.pub_keys[peer_pub_key][1] = derived_key.hex()
                 print("posuvam do edit key files")
-                self.edit_key_file(peer_pub_key, derived_key.hex())
+                self.edit_key_file(peer_pub_key, derived_key.hex())#musim kukat aj tx od seba ktore nemam
             elif tx_type == "01":
                 nonce = bytes.fromhex(tx[2:34])
-                msg_size = int(tx[34:38], 16)
+                msg_size = int(tx[34:38], 16) * 2
                 msg = bytes.fromhex(tx[38:msg_size+38])
                 if user[1] == "no" or user[1] == "sent":
                     if user[0] == "__unknown" and user[1] == "no":
@@ -225,7 +246,7 @@ class Blockchain:
                 msg = msg.decode("utf-8")
                 print(f"e {user[0]}: {msg}")
             elif tx_type == "02":
-                msg_size = int(tx[2:6], 16)
+                msg_size = int(tx[2:6], 16) * 2
                 msg = bytes.fromhex(tx[6:msg_size+6]).decode("utf-8")
                 print(f"{user[0]}: {msg}")
 
@@ -313,12 +334,12 @@ class Blockchain:
                         break
                 nonce = urandom(16)
                 algorithm = ChaCha20(key, nonce)
-                cipher = Cipher(algorithm, mode=None)
+                cipher = Cipher(algorithm, mode=None, backend=backend)
                 encryptor = cipher.encryptor()
                 msg = encryptor.update(msg)
             msg = msg.hex()
-            if len(msg) <= 1000:
-                msg_size = self.fill(hex(len(msg))[2:], 4)
+            if len(msg) <= 2000:
+                msg_size = self.fill(hex(len(bytes.fromhex(msg)))[2:], 4)
                 timestamp = hex(int(time()))[2:]
                 tx = msg_size + msg + timestamp + rec_key + self.public_key_hex
                 if msg_type == "01":
@@ -350,7 +371,7 @@ class Blockchain:
         hashes = []
         for i in self.mempool:
               txs += i
-              hashes.append(self.hash(i[2:]))
+              hashes.append(self.hash(i))
               if len(hashes) == 255:
                   break
         txs = txs_num + txs
