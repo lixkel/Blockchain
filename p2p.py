@@ -39,7 +39,7 @@ def main(nodes, inbound, outbound, ban_list):
                     except:
                         for i in list(nodes.keys()):
                             try:
-                                nodes[i].getpeername()
+                                nodes[i].socket.getpeername()
                             except:
                                 del nodes[i]
                 else:
@@ -85,7 +85,14 @@ def main(nodes, inbound, outbound, ban_list):
                     if soc.getpeername() == body:
                         send_message(soc, b"close", nodes)
                         sockets_list.remove(soc)
-                        del nodes[soc.getpeername()]
+                        try:
+                            del nodes[soc.getpeername()]
+                        except:
+                            for i in list(nodes.keys()):
+                                try:
+                                    nodes[i].socket.getpeername()
+                                except:
+                                    del nodes[i]
                         soc.close()
             elif comm == "end":
                 for soc in sockets_list:
@@ -131,7 +138,15 @@ def receive_message(soc):
             return False
         message_header = message_header.hex()
         payload_lenght = int(message_header[24:], 16)
-        payload = soc.recv(payload_lenght)
+        chunks = []
+        bytes_recv = 0
+        while bytes_recv < payload_lenght:
+            chunk = soc.recv(min(payload_lenght - bytes_recv, 2048))
+            if chunk == b'':
+                return False
+            chunks.append(chunk)
+            bytes_recv = bytes_recv + len(chunk)
+        payload = b''.join(chunks)
         return message_header + payload.hex()
     except socket.error as e:
         logging.debug(f"Error receiving data: {e}")
