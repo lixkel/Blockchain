@@ -7,7 +7,7 @@ Message types:
 
 version:
 4 - version
-8 - timestamp
+4 - timestamp
 4 - best height
 4 - address of receiving node
 2 - port of transmitter
@@ -33,7 +33,7 @@ addr:
 2 - number of addresses
 4 - ip address
 2 - port
-8 - timestamp
+4 - timestamp
 
 getaddr:
 nothing
