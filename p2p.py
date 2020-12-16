@@ -37,11 +37,7 @@ def main(nodes, inbound, outbound, ban_list):
                     try:#ked je new message false mozu sa stat 2 moznosti ze je error na packete alebo som len dostal close alebo b""
                         del nodes[soc.getpeername()]#v prvom pripade toto fungovat nebude socket vyhodi error
                     except:
-                        for i in list(nodes.keys()):
-                            try:
-                                nodes[i].socket.getpeername()
-                            except:
-                                del nodes[i]
+                        del_bad_soc(nodes)
                 else:
                     if new_message != "error":
                         nodes[soc.getpeername()].lastrecv = int(time())
@@ -88,11 +84,7 @@ def main(nodes, inbound, outbound, ban_list):
                         try:
                             del nodes[soc.getpeername()]
                         except:
-                            for i in list(nodes.keys()):
-                                try:
-                                    nodes[i].socket.getpeername()
-                                except:
-                                    del nodes[i]
+                            del_bad_soc(nodes)
                         soc.close()
             elif comm == "end":
                 for soc in sockets_list:
@@ -111,8 +103,10 @@ def send_message(soc, message, nodes):
             if sent == 0:
                 return False
             totalsent = totalsent + sent
-        if message != b"close" or message != b"":
+        try:
             nodes[soc.getpeername()].lastsend = int(time())
+        except:
+            del_bad_soc(nodes)
         return True
     except socket.error as e:
         logging.debug(f"Error sending data: {e}")
@@ -151,3 +145,11 @@ def receive_message(soc):
     except socket.error as e:
         logging.debug(f"Error receiving data: {e}")
         return False
+
+
+def del_bad_soc(nodes):
+    for i in list(nodes.keys()):
+        try:
+            nodes[i].socket.getpeername()
+        except:
+            del nodes[i]
