@@ -4,6 +4,7 @@ import sqlite3
 import hashlib
 import logging
 import threading
+import traceback
 from time import time
 from random import randint
 from multiprocessing import Queue, Process
@@ -80,6 +81,7 @@ def handle_message(soc, message):
         logging.debug(f"headers msg: {payload}")
         logging.debug(f"headers sync: {sync}")
         if payload == "00":
+            print("Blockchain synced")
             sync = [True, 0, 0]
             return
         if not sync[0] and sync[2] == soc.getpeername():
@@ -169,6 +171,7 @@ def handle_message(soc, message):
     elif command == "getheaders":
         logging.debug(f"getheaders sync: {sync}")
         if not sync[0] and sync[2] == soc.getpeername():
+            print("Blockchain synced")
             sync = [True, 0, 0]
         chainwork = int(payload[:64], 16)
         if blockchain.chainwork < chainwork:#tu by sa potom dal dat ze expect sync ak to budem chciet robit cez
@@ -317,6 +320,7 @@ def send_message(command, soc = None, cargo = None):
         header = create_header(type, payload_lenght)
         outbound.put(["send", [soc, header + payload]])
     elif command == "sync":
+        print("Synchronizujem zo sieťou")
         sync = [False, int(time()), soc.getpeername()]
         num_headers = 0
         blockchain.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
@@ -575,6 +579,7 @@ try:
         if not sync[0]:
             if sync[1] != 0 and  int(time()) - sync[1] > 30:
                 ban_check(sync[2])
+                print("Blockchain synced")
                 sync = [True, 0, 0]
         if not com.empty():
             a, b = com.get()
@@ -638,8 +643,7 @@ try:
                     #mining.terminate()
                 break
 
-except KeyError as e:
-    print(e)
-    logging.error(e)
+except:
+    logging.error(traceback.format_exc())
     outbound.put(["end", []])
     local_node.join()
