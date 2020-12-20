@@ -91,7 +91,7 @@ class Blockchain:
         self.height = entry[0]
         self.target = entry[2][136:200]
         self.chainwork = entry[3]
-        print(f"height: {self.height}, target: {self.target}, chainwork: {self.chainwork}")
+        logging.debug(f"height: {self.height}, target: {self.target}, chainwork: {self.chainwork}")
 
 
     def verify_block(self, block):
@@ -99,11 +99,11 @@ class Blockchain:
         block_target = int(block_target, 16)
         header_hash = self.hash(block[:216])
         if not int(header_hash, 16) <= block_target:
-            print("block invalid target")
+            logging.debug("block invalid target")
             return False
         num_tx = int(block[216:218], 16)
         if num_tx > 255:
-            print("block invalid prilis vela tx")
+            logging.debug("block invalid prilis vela tx")
             return False
         index = 218
         tx_remaining = 270
@@ -120,33 +120,33 @@ class Blockchain:
             tx_size = index + message_size + tx_remaining
             tx = block[index:tx_size]
             if not self.verify_tx(tx, timestamp=block[200:208]):
-                print("block invalid tx")
+                logging.debug("block invalid tx")
                 return False
             tx_hashes.append(self.hash(tx))
-            index += tx_size
+            index = tx_size
         merkle_root = self.merkle_tree(tx_hashes)
         if merkle_root != block[72:136]:
-            print(block[72:136])
-            print("block merkle root invalid")
+            logging.debug(block[72:136])
+            logging.debug("block merkle root invalid")
             return False
-        print("block True")
+        logging.debug("block True")
         return True
 
 
     def verify_tx(self, tx, timestamp=None):
         global Ed25519PublicKey
-        print(tx)
+        logging.debug(tx)
         if tx in self.mempool:
-            print("tx True already have")
+            logging.debug("tx True already have")
             return "already"
         elif tx in self.valid_tx:
-            print("tx already in valid_tx")
+            logging.debug("tx already in valid_tx")
             if timestamp:#ak vola turo funkciu verify_block
                 return False#aby v blockchaine nemohli byt dve tie iste tx
             return "already"
         tx_type = tx[:2]
         if not tx_type in ["00", "01", "02"]:
-            print(f"invalid tx type: {tx_type}")
+            logging.debug(f"invalid tx type: {tx_type}")
             return False
         if tx_type == "00":
             msg_size = 64-4
@@ -156,14 +156,14 @@ class Blockchain:
         else:
             msg_size = int(tx[2:6], 16) * 2
         if msg_size > 2000:
-            print("msg size je moc velka")
+            logging.debug("msg size je moc velka")
             return False
         sig = bytes.fromhex(tx[-128:])
         sender_pub_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(tx[-192:-128]))
         try:
             sender_pub_key.verify(sig, bytes.fromhex(tx[:-128]))
         except:
-            print("tx sig False")
+            logging.debug("tx sig False")
             return False
         tx_timestamp = int(tx[-264:-256], 16)
         if timestamp:
@@ -173,7 +173,7 @@ class Blockchain:
             #ked bude temp fork a dojdu dva bloky s tymi istymi tx tak ich budem ma t dva krat v db
         elif not -1800 <= int(time()) - tx_timestamp <= 1800:
             return False
-        print("tx True")
+        logging.debug("tx True")
         return True
 
 
@@ -204,16 +204,16 @@ class Blockchain:
     def tx_content(self, tx):
         if tx[-256:-192] == self.public_key_hex:
             tx_type = tx[:2]
-            print(f"{tx_type}")
+            logging.debug(f"{tx_type}")
             peer_pub_key = tx[-192:-128]
             try:
                 user = self.pub_keys[peer_pub_key]
             except KeyError:
                 self.save_key(peer_pub_key)
                 user = self.pub_keys[peer_pub_key]
-            print(f"user: {user}")
+            logging.debug(f"user: {user}")
             if tx_type == "00":
-                print("som v 00")
+                logging.debug("som v 00")
                 dh_peer_key = X25519PublicKey.from_public_bytes(bytes.fromhex(tx[2:66]))
                 shared_key = self.dh_private_key.exchange(dh_peer_key)
                 derived_key = HKDF(
@@ -226,7 +226,7 @@ class Blockchain:
                 if user[1] != "sent" and sync[0] == True:#mozno by som nemal prijimat tx pocas syncovania
                     self.send_message("send", cargo=["", peer_pub_key, "00"])
                 self.pub_keys[peer_pub_key][1] = derived_key.hex()
-                print("posuvam do edit key files")
+                logging.debug("posuvam do edit key files")
                 self.edit_key_file(peer_pub_key, derived_key.hex())#musim kukat aj tx od seba ktore nemam
             elif tx_type == "01":
                 nonce = bytes.fromhex(tx[2:34])
@@ -321,11 +321,10 @@ class Blockchain:
         else:
             msg = msg.encode("utf-8")
             if msg_type == "01":
-                print(f"rec_key: {rec_key}")
+                logging.debug(f"rec_key: {rec_key}")
                 for i in self.pub_keys:
-                    print(f"{i}: {self.pub_keys[i]}")
+                    logging.debug(f"{i}: {self.pub_keys[i]}")
                     if rec_key == i:
-                        print()
                         key = self.pub_keys[i][1]
                         if key == "no" or  key == "sent":
                             print("s pouzivatelom este neprebehla vymena klucov")
@@ -355,7 +354,7 @@ class Blockchain:
         if self.verify_tx(tx.hex()) == True:
             return tx
         else:
-            print("vytvorena tx je zla")
+            logging.debug("vytvorena tx je zla")
         return False
 
 
@@ -444,13 +443,17 @@ class Blockchain:
                                 self.block_content(append_block[1])
                                 alter_row += 1
                             self.chainwork = chain.chainwork
+                            logging.debug(f"new highest block hash: {chain.chain[-1][0]}")
                             self.alter_chains.remove(chain)
                             self.conn.commit()
-                            self.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
-                            self.height = self.c.fetchone()[0]
+                            self.c.execute("SELECT rowid, block FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
+                            query = self.c.fetchone()
+                            self.height = query[0]
+                            self.target = query[1][136:200]
                             if self.height % 10 == 0:
-                                print("append calc_height")
+                                logging.debug("append calc_height")
                                 self.calc_target()
+                            return True
                         return "appended"
                 try:
                     a = self.orphans[new_block[8:72]]
@@ -465,7 +468,7 @@ class Blockchain:
         if block_target != self.target:
             return False
         if sync and -360 <= int(time()) - int(new_block[208:216], 16) <= 360:
-            print("append bad block timestamp")
+            logging.debug("append bad block timestamp")
             return False
         self.chainwork += int(2**256/int(block_target, 16))
         self.c.execute("INSERT INTO blockchain VALUES (?,?,?);", (new_block_hash, new_block, self.chainwork))
@@ -473,7 +476,7 @@ class Blockchain:
         self.block_content(new_block)
         self.height += 1
         if self.height % 10 == 0:
-            print("append calc_height")
+            logging.debug("append calc_height")
             self.calc_target()
         return True
 
@@ -497,8 +500,8 @@ class Blockchain:
         elif len(new_target) > 64:
             new_target = "f" * 64
         self.target = new_target
-        print(f"difficulty change: {change}")
-        print(f"new target: {self.target}")
+        logging.debug(f"difficulty change: {change}")
+        logging.debug(f"new target: {self.target}")
 
 
     def check_orphans(self, param):#berie ako parameter hash blocku ku ktoremu pozrie ci v orphans nema child a potom zavola append a znovu check_orphans

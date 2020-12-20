@@ -5,6 +5,7 @@ def mine(mined, to_mine):
         if not to_mine.empty():
             header, transactions = to_mine.get()
             target = int(header[136:200], 16)
+            comm = ""
             while True:
                 for i in range(4294967295):
                     if not to_mine.empty():
@@ -18,7 +19,8 @@ def mine(mined, to_mine):
                     if int(hash_result, 16) <= target:
                         break
                 if int(hash_result, 16) <= target or comm == "stop":
+                    if comm != "stop":
+                        mined.put(header + nonce + transactions)
                     comm = None
-                    mined.put(header + nonce + transactions)
                     break
                 header = header[:200] + hex(int(time.time()))[:2]

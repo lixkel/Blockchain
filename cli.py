@@ -73,6 +73,8 @@ def cli(com, display, prnt):
             com.put([a, ""])
         elif a == "highest":
             com.put([a, ""])
+        elif a == "nodesdb":
+            com.put([a, ""])
         elif a == "help":
             print("""\n            con - manualne sa pripoj na node
             send - posli spravu

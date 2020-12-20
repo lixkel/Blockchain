@@ -127,20 +127,28 @@ def bind_socket(host, port):
 def receive_message(soc):
     global socket
     try:
-        message_header = soc.recv(16)
-        if message_header == b"" or message_header == b"close":
-            return False
+        chunks = []
+        bytes_recv = 0
+        while bytes_recv < 16:
+            chunk = soc.recv(16 - bytes_recv)
+            if chunk == b"":
+                return False
+            chunks.append(chunk)
+            bytes_recv = bytes_recv + len(chunk)
+            message_header = b"".join(chunks)
+            if message_header == b"close":
+                return False
         message_header = message_header.hex()
         payload_lenght = int(message_header[24:], 16)
         chunks = []
         bytes_recv = 0
         while bytes_recv < payload_lenght:
             chunk = soc.recv(min(payload_lenght - bytes_recv, 2048))
-            if chunk == b'':
+            if chunk == b"":
                 return False
             chunks.append(chunk)
             bytes_recv = bytes_recv + len(chunk)
-        payload = b''.join(chunks)
+        payload = b"".join(chunks)
         return message_header + payload.hex()
     except socket.error as e:
         logging.debug(f"Error receiving data: {e}")
