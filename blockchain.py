@@ -90,11 +90,15 @@ class Blockchain:
         entry = self.c.fetchone()
         self.height = entry[0]
         self.target = entry[2][136:200]
+        if self.height % 10 == 0:
+            logging.debug("start calc_height")
+            self.calc_target()
         self.chainwork = entry[3]
         logging.debug(f"height: {self.height}, target: {self.target}, chainwork: {self.chainwork}")
 
 
     def verify_block(self, block):
+        logging.debug("verifying block")
         block_target = block[136:200]
         block_target = int(block_target, 16)
         header_hash = self.hash(block[:216])
@@ -192,8 +196,11 @@ class Blockchain:
             tx_size = index + message_size + tx_remaining
             tx = block[index:tx_size]
             if tx in self.mempool:
+                print(f"removujem tx: {tx}")
+                print(f"mempool pred: {self.mempool}")
                 self.mempool.remove(tx)
                 self.valid_tx.append(tx)
+                print(f"mempool po: {self.mempool}")
             elif tx in self.valid_tx:#pri temp forku by sa toto dalo obist ale to budem riesit asi pri ui verzii
                 pass
             else:
@@ -223,11 +230,11 @@ class Blockchain:
                                 info=b'blockchain',
                                 backend=backend,
                                 ).derive(shared_key)
-                if user[1] != "sent" and sync[0] == True:#mozno by som nemal prijimat tx pocas syncovania
+                if user[1] != "sent":#mozno by som nemal prijimat tx pocas syncovania
                     self.send_message("send", cargo=["", peer_pub_key, "00"])
                 self.pub_keys[peer_pub_key][1] = derived_key.hex()
                 logging.debug("posuvam do edit key files")
-                self.edit_key_file(peer_pub_key, derived_key.hex())#musim kukat aj tx od seba ktore nemam
+                self.edit_key_file(peer_pub_key, derived_key.hex(), 2)#musim kukat aj tx od seba ktore nemam
             elif tx_type == "01":
                 nonce = bytes.fromhex(tx[2:34])
                 msg_size = int(tx[34:38], 16) * 2
@@ -288,7 +295,7 @@ class Blockchain:
         file.close()
 
 
-    def edit_key_file(self, pub_key, new_value,):
+    def edit_key_file(self, pub_key, new_value, index):
         file = open("pubKeyFile", "r")
         all_keys = file.read().split("\n")[:-1]
         file.close()
@@ -296,7 +303,8 @@ class Blockchain:
         for i in all_keys:
             pair = i.split()
             if pair[0] == pub_key:
-                file.write(f"{pair[0]} {pair[1]} {new_value}\n")
+                pair[index] = new_value
+                file.write(f"{pair[0]} {pair[1]} {pair[2]}\n")
             else:
                 file.write(i + "\n")
 
@@ -466,6 +474,9 @@ class Blockchain:
                 return "alrdgot"
         block_target = new_block[136:200]
         if block_target != self.target:
+            logging.debug("append bad target")
+            logging.debug(f"block_target: {block_target}")
+            logging.debug(f"self.target: {self.target}")
             return False
         if sync and -360 <= int(time()) - int(new_block[208:216], 16) <= 360:
             logging.debug("append bad block timestamp")
@@ -476,6 +487,7 @@ class Blockchain:
         self.block_content(new_block)
         self.height += 1
         if self.height % 10 == 0:
+            #keby skoncim majnenie presne tu nebol by to problem pri nacitani?
             logging.debug("append calc_height")
             self.calc_target()
         return True

@@ -61,6 +61,30 @@ def cli(com, display, prnt):
                 if dict[i][1] != "no" or dict[i][1] != "sent":
                     v = "yes"
                 print(f"{dict[i][0]}: {i} | encryption: {v}")
+        elif a == "edit":
+            com.put(["send", ["", "", ""]])
+            while display.empty():
+                pass
+            key_list = display.get()
+            for i in key_list:
+                v = "no"
+                if key_list[i][1] != "no" or key_list[i][1] != "sent":
+                    v = "yes"
+                print(f"{key_list[i][0]}: {i} | encryption: {v}")
+            while True:
+                try:
+                    b = input("zadaj cislo mena(0-n, stop-ukoncit tento command): ")
+                    if b == "stop":
+                        break
+                    b = int(b)
+                    if 0 <= b < len(key_list):
+                        break
+                    else:
+                        print("zle zadane cislo")
+                except:
+                    print("mezadal si cislo")
+            c = input("zadaj nove meno: ")
+            com.put([a, [b, c]])
         elif a == "lsnodes":
             com.put([a, ""])
             while display.empty():

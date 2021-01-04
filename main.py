@@ -467,7 +467,7 @@ opt_nodes = 5
 num_time = 0
 my_addr = ""
 prev_time = int(time())
-port = 55554#bude treba otestovat minenie zaroven a prechod na alter chain pod aj nad 255 blockov
+port = 55555#bude treba otestovat minenie zaroven a prechod na alter chain pod aj nad 255 blockov
 default_port = 55555
 con_sent = False
 hardcoded_nodes = (("146.59.15.193", 55555),)
@@ -607,6 +607,11 @@ try:
                 send_message("send", cargo=cargo)
             elif a == "export":
                 display.put(blockchain.public_key_hex)
+            elif a == "edit":
+                pub_key, new_name = b
+                pub_key = list(blockchain.pub_keys.keys())[pub_key]
+                blockchain.pub_keys[pub_key][0] = new_name
+                blockchain.edit_key_file(pub_key, new_name, 1)
             elif a == "lsimported":
                 display.put(blockchain.pub_keys)
             elif a == "lsnodes":
