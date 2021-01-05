@@ -581,12 +581,13 @@ if __name__ == '__main__':
                         continue
                     print("minujeme")
                     start_mining()
-                    mining = threading.Thread(target=mine, args=(mined, to_mine))
+                    mining = Process(target=mine, args=(mined, to_mine))
                     mining.start()
                 elif a == "stop mining":
                     if mining:
                         mining.terminate()
                         mining = None
+                        print("mining stopped")
                 elif a == "nodesdb":
                     current_time = int(time())
                     c.execute("SELECT * FROM nodes")
@@ -600,14 +601,15 @@ if __name__ == '__main__':
                     print(f"block hash: {row[1]}")
                     print(f"block: {row[2]}")
                 elif a == "end":
-                    #print(mining)
                     outbound.put(["end", []])
                     local_node.join()
-                    #if mining:
-                        #mining.terminate()
+                    if mining:
+                        mining.terminate()
                     break
 
     except:
         logging.error(traceback.format_exc())
+        if mining:
+            mining.terminate()
         outbound.put(["end", []])
         local_node.join()
