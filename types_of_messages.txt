@@ -2,7 +2,7 @@
 x25519 Diffie-Hellman key exchange:
 
 00 - type of transaction (1 Byte)
-29c439c35d03757de49091ad03ddee74626e06164d608cb3a1370ce36681e163 - x25519 publick key (32 Bytes)
+29c439c35d03757de49091ad03ddee74626e06164d608cb3a1370ce36681e163 - x25519 public key (32 Bytes)
 5F44192B - transaction timestamp (4 Bytes)
 bb03a30a81630d8447b38c7ebcdd0fbde3c04cb454fb4cad21ce98aaa375a827 - Public key of receiver (32 Bytes)
 35f7319b55185034598c724e59999cd971eeec93f48a9d1b3470501e2d8821dd - Public key of sender (32 Bytes)
@@ -10,7 +10,7 @@ bb03a30a81630d8447b38c7ebcdd0fbde3c04cb454fb4cad21ce98aaa375a827 - Public key of
 
 
 01
-message encrypted with AES256:
+message encrypted with Chacha20:
 
 01 - type of transaction (1 Byte)
 f24ee471ab278a14bf9f44395fb21ab4 - nonce (16 Bytes)

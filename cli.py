@@ -110,6 +110,8 @@ def cli(com, display, prnt):
             stop mining
             highest - najvyssi block
             end - koniec programu\n""")
+        elif a == "stop":
+            break
         elif a == "end":
             com.put([a, ""])
             break

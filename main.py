@@ -305,7 +305,7 @@ def send_message(command, soc = None, cargo = None):
         header = create_header(type, payload_lenght)
         outbound.put(["send", [soc, header + payload]])
     elif command == "sync":
-        print("Synchronizujem zo sieťou")
+        print("Synchronizujem zo sietou")
         sync = [False, int(time()), soc.getpeername()]
         num_headers = 0
         blockchain.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
@@ -509,6 +509,8 @@ if __name__ == '__main__':
                 logging.debug(f"new block mined: {new_block}")
                 new_block_hash = blockchain.hash(new_block[:216])
                 if blockchain.append(new_block, sync[0]) == True:
+                    print("new block mined")
+                    print(f"mempool: {blockchain.mempool}")
                     message = "01" + new_block_hash
                     send_message("broadcast", cargo=[message, "headers"])
                 else:
