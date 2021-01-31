@@ -127,6 +127,7 @@ def handle_message(soc, message):
                 return
             elif appended == True:
                 orphans = blockchain.check_orphans("main")
+                print(f"new valid block received")
             else:
                 ban_check(soc.getpeername())
                 return
@@ -155,6 +156,8 @@ def handle_message(soc, message):
         send_message("broadcast", soc=soc.getpeername(),  cargo=[new_message, "headers"])
     elif command == "getheaders":
         logging.debug(f"getheaders sync: {sync}")
+        if not sync[0]:
+            return
         if not sync[0] and sync[2] == soc.getpeername():
             print("Blockchain synced")
             sync = [True, 0, 0]
@@ -442,8 +445,8 @@ def start_mining():
     block_header, txs = blockchain.build_block()
     to_mine.put([block_header, txs])
 
-
-if __name__ == '__main__':
+def main():
+    global sync, mining, con_sent, blockchain, stime, prev_time
     blockchain = Blockchain(version, send_message, sync, logging)
     local_node.start()
 
@@ -615,3 +618,7 @@ if __name__ == '__main__':
             mining.terminate()
         outbound.put(["end", []])
         local_node.join()
+
+
+if __name__ == '__main__':
+    main()
