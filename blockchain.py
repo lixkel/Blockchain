@@ -231,7 +231,7 @@ class Blockchain:
                                 info=b'blockchain',
                                 backend=backend,
                                 ).derive(shared_key)
-                if user[1] != "sent":#mozno by som nemal prijimat tx pocas syncovania
+                if user[1] == "no":#mozno by som nemal prijimat tx pocas syncovania
                     self.send_message("send", cargo=["", peer_pub_key, "00"])
                 self.pub_keys[peer_pub_key][1] = derived_key.hex()
                 logging.debug("posuvam do edit key files")
@@ -526,7 +526,7 @@ class Blockchain:
         new = []
         try:
             orphan = self.orphans[top_hash]
-            if self.append(orphan):
+            if self.append(orphan, sync):
                 del self.orphans[top_hash]
                 new.append(self.hash(orphan[:216]))
                 for i in self.check_orphans(self.hash(orphan[:216])):

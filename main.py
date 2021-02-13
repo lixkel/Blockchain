@@ -44,6 +44,7 @@ def handle_message(soc, message):
             nodes[soc.getpeername()].authorized = True
             nodes[soc.getpeername()].expecting = ""
         else:
+            logging.debug(f"{command} bancheck")
             ban_check(soc.getpeername())
     elif command == "transaction":
         if nodes[soc.getpeername()].authorized == True:
@@ -59,8 +60,10 @@ def handle_message(soc, message):
             elif result == "already":
                 pass
             else:
+                logging.debug(f"{command} 1 bancheck")
                 ban_check(soc.getpeername())
         else:
+            logging.debug(f"{command} 2 bancheck")
             ban_check(soc.getpeername())
     elif command == "headers":
         logging.debug(f"headers msg: {payload}")
@@ -129,9 +132,11 @@ def handle_message(soc, message):
                 orphans = blockchain.check_orphans("main")
                 print(f"new valid block received")
             else:
+                logging.debug(f"{command} 1 bancheck")
                 ban_check(soc.getpeername())
                 return
         else:
+            logging.debug(f"{command} 2 bancheck")
             ban_check(soc.getpeername())
             return
         logging.debug(f"sync: {sync}")
@@ -156,9 +161,9 @@ def handle_message(soc, message):
         send_message("broadcast", soc=soc.getpeername(),  cargo=[new_message, "headers"])
     elif command == "getheaders":
         logging.debug(f"getheaders sync: {sync}")
-        if not sync[0]:
+        if not sync[0] and sync[2] != soc.getpeername():
             return
-        if not sync[0] and sync[2] == soc.getpeername():
+        elif not sync[0] and sync[2] == soc.getpeername():
             print("Blockchain synced")
             sync = [True, 0, 0]
         chainwork = int(payload[:64], 16)
@@ -213,6 +218,7 @@ def handle_message(soc, message):
             elif rowid == max_rowid:
                 send_message("universal",soc=soc, cargo=["00", "headers"])
         else:
+            logging.debug(f"{command} 3 bancheck")
             ban_check(soc.getpeername())
     elif command == "getaddr":
         send_message("addr", soc=soc)
@@ -220,6 +226,7 @@ def handle_message(soc, message):
         logging.debug(f"addr payload: {payload}")
         num_addr = int(payload[:4], 16)
         if num_addr > 1000:
+            logging.debug(f"{command} bancheck")
             ban_check(soc.getpeername())
             return
         index = 4
@@ -266,6 +273,7 @@ def handle_message(soc, message):
     elif command == "active":
         pass
     else:
+        logging.debug(f"{command} bancheck")
         ban_check(soc.getpeername())
 
 
@@ -446,7 +454,7 @@ def start_mining():
     to_mine.put([block_header, txs])
 
 def main():
-    global sync, mining, con_sent, blockchain, stime, prev_time
+    global sync, mining, con_sent, blockchain, stime, prev_time, num_time
     blockchain = Blockchain(version, send_message, sync, logging)
     local_node.start()
 
@@ -542,6 +550,7 @@ def main():
                 conn.commit()
             if not sync[0]:
                 if sync[1] != 0 and  int(time()) - sync[1] > 30:
+                    logging.debug(f"sync bancheck")
                     ban_check(sync[2])
                     print("Blockchain synced")
                     sync = [True, 0, 0]
@@ -605,6 +614,24 @@ def main():
                     print(f"height: {row[0]}")
                     print(f"block hash: {row[1]}")
                     print(f"block: {row[2]}")
+                elif a == "mine one":
+                    start_mining()
+                    mining = Process(target=mine, args=(mined, to_mine))
+                    mining.start()
+                    while mined.empty():
+                        pass
+                    new_block = mined.get()
+                    print(f"new block mined: {new_block}")
+                    new_block_hash = blockchain.hash(new_block[:216])
+                    if blockchain.append(new_block, sync[0]) == True:
+                        print("new block mined")
+                        print(f"mempool: {blockchain.mempool}")
+                        message = "01" + new_block_hash
+                        send_message("broadcast", cargo=[message, "headers"])
+                    else:
+                        print("block neappendnuty")
+                    mining.terminate()
+                    mining = None
                 elif a == "end":
                     outbound.put(["end", []])
                     local_node.join()
