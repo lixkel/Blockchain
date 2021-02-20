@@ -345,7 +345,7 @@ def send_message(command, soc = None, cargo = None):
     elif command == "addr":
         if cargo == "init":
             payload = bytes.fromhex("0001" + encode_ip(my_addr) + blockchain.fill(hex(port)[2:], 4) + hex(int(time()))[2:])
-        elif cargo != None:
+        elif cargo != None and cargo != "broadcast":
             payload = bytes.fromhex(cargo)
         else:
             timestamp = int(time()) - 18000
@@ -368,7 +368,7 @@ def send_message(command, soc = None, cargo = None):
             payload = bytes.fromhex(blockchain.fill(hex(num_addr)[2:], 4) + payload)
         payload_lenght = hex(len(payload))[2:]
         header = create_header("addr", payload_lenght)
-        if cargo == "broacast":
+        if cargo == "broadcast":
             outbound.put(["broadcast", [soc, header + payload]])
         else:
             outbound.put(["send", [soc, header + payload]])
@@ -538,6 +538,7 @@ def main():
                     if current_time - i.lastrecv > 5400:
                         outbound.put(["close", i.address])
                     elif current_time - i.lastsend > 1800:
+                        logging.debug(f"posielam active na {soc.getpeername()}")
                         send_message("only", soc=nodes[soc.getpeername()].socket, cargo="active")
                 if num_time == 48:
                     send_message("addr", cargo="broadcast")
