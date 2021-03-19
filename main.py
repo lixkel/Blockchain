@@ -5,9 +5,9 @@ def handle_message(soc, message):
     global version, nodes, sync, expec_blocks, my_addr, con_sent
     command = bytes.fromhex(message[:24].lstrip("0")).decode("utf-8")
     payload = message[32:]
-    logging.debug(f"{soc.getpeername()}: {command}")
+    logging.debug(f"{getpeername(soc)}: {command}")
     if command == "version":
-        if nodes[soc.getpeername()].expecting == "version":
+        if nodes[getpeername(soc)].expecting == "version":
             node_version = payload[:8]
             if node_version != version:
                 return
@@ -15,39 +15,39 @@ def handle_message(soc, message):
                 logging.debug("old version")
                 print("vyzera to ze mas zastaralu verziu")
             best_height = int(payload[-20:-12], 16)
-            nodes[soc.getpeername()].best_height = best_height
+            nodes[getpeername(soc)].best_height = best_height
             my_addr = decode_ip(payload[-12:-4])
             logging.debug(f"my_addr: {my_addr}")
             tr_port = int(payload[-4:], 16)
-            nodes[soc.getpeername()].port = tr_port
+            nodes[getpeername(soc)].port = tr_port
             logging.debug(f"node property: {tr_port}")
             timestamp = int(payload[8:24], 16)
             time_difference = int(int(time()) - timestamp)
             if -300 < time_difference > 300:
                 return
-            if nodes[soc.getpeername()].inbound:
-                send_message("version", nodes[soc.getpeername()].socket)
-                nodes[soc.getpeername()].expecting = "verack"
+            if nodes[getpeername(soc)].inbound:
+                send_message("version", nodes[getpeername(soc)].socket)
+                nodes[getpeername(soc)].expecting = "verack"
             else:
-                send_message("only", soc=nodes[soc.getpeername()].socket, cargo="verack")
-                nodes[soc.getpeername()].authorized = True
-                nodes[soc.getpeername()].expecting = ""
-                send_message("addr", soc=nodes[soc.getpeername()].socket, cargo="init")
+                send_message("only", soc=nodes[getpeername(soc)].socket, cargo="verack")
+                nodes[getpeername(soc)].authorized = True
+                nodes[getpeername(soc)].expecting = ""
+                send_message("addr", soc=nodes[getpeername(soc)].socket, cargo="init")
                 send_message("only", soc=list(nodes.values())[0].socket, cargo="getaddr")
-                if soc.getpeername() not in hardcoded_nodes:
+                if getpeername(soc) not in hardcoded_nodes:
                     send_message("sync", soc=soc)
-                peer = nodes[soc.getpeername()]
+                peer = nodes[getpeername(soc)]
                 c.execute("UPDATE nodes SET timestamp = (?) WHERE addr = (?) AND port = (?);", (peer.lastrecv, peer.address[0], peer.port))
                 con_sent = False
     elif command == "verack":
-        if nodes[soc.getpeername()].expecting == "verack":
-            nodes[soc.getpeername()].authorized = True
-            nodes[soc.getpeername()].expecting = ""
+        if nodes[getpeername(soc)].expecting == "verack":
+            nodes[getpeername(soc)].authorized = True
+            nodes[getpeername(soc)].expecting = ""
         else:
             logging.debug(f"{command} bancheck")
-            ban_check(soc.getpeername())
+            ban_check(getpeername(soc))
     elif command == "transaction":
-        if nodes[soc.getpeername()].authorized == True:
+        if nodes[getpeername(soc)].authorized == True:
             result = blockchain.verify_tx(payload)
             if result == True:
                 #mal by som to spreavit tak aby sa checkovalo len raz ci je tx v mempool
@@ -56,15 +56,15 @@ def handle_message(soc, message):
                 blockchain.valid_tx.append(payload)
                 blockchain.mempool.append(payload)
                 blockchain.tx_content(payload)
-                send_message("broadcast", soc=soc.getpeername(), cargo=[payload, "transaction"])
+                send_message("broadcast", soc=getpeername(soc), cargo=[payload, "transaction"])
             elif result == "already":
                 pass
             else:
                 logging.debug(f"{command} 1 bancheck")
-                ban_check(soc.getpeername())
+                ban_check(getpeername(soc))
         else:
             logging.debug(f"{command} 2 bancheck")
-            ban_check(soc.getpeername())
+            ban_check(getpeername(soc))
     elif command == "headers":
         logging.debug(f"headers msg: {payload}")
         logging.debug(f"headers sync: {sync}")
@@ -72,7 +72,7 @@ def handle_message(soc, message):
             print("Blockchain synced")
             sync = [True, 0, 0]
             return
-        if not sync[0] and sync[2] == soc.getpeername():
+        if not sync[0] and sync[2] == getpeername(soc):
             sync[1] = 0
         num_headers = int(payload[:2],16)
         num_hashes = 0
@@ -122,7 +122,7 @@ def handle_message(soc, message):
             elif appended == "appended":
                 if sync[0]:
                     new_message = "01" + block_hash
-                    send_message("broadcast", soc=soc.getpeername(), cargo=[new_message, "headers"])
+                    send_message("broadcast", soc=getpeername(soc), cargo=[new_message, "headers"])
                 if sync[0] == False and expec_blocks == 0:
                     logging.debug("block posielam sync")
                     send_message("append sync", soc=soc, cargo=block_hash)
@@ -133,11 +133,11 @@ def handle_message(soc, message):
                 print(f"new valid block received")
             else:
                 logging.debug(f"{command} 1 bancheck")
-                ban_check(soc.getpeername())
+                ban_check(getpeername(soc))
                 return
         else:
             logging.debug(f"{command} 2 bancheck")
-            ban_check(soc.getpeername())
+            ban_check(getpeername(soc))
             return
         logging.debug(f"sync: {sync}")
         if sync[0] == False and expec_blocks == 0:
@@ -158,12 +158,12 @@ def handle_message(soc, message):
                 num_headers += 1
         num_headers = blockchain.fill(hex(num_headers)[2:], 2)
         new_message = num_headers + headers
-        send_message("broadcast", soc=soc.getpeername(),  cargo=[new_message, "headers"])
+        send_message("broadcast", soc=getpeername(soc),  cargo=[new_message, "headers"])
     elif command == "getheaders":
         logging.debug(f"getheaders sync: {sync}")
-        if not sync[0] and sync[2] != soc.getpeername():
+        if not sync[0] and sync[2] != getpeername(soc):
             return
-        elif not sync[0] and sync[2] == soc.getpeername():
+        elif not sync[0] and sync[2] == getpeername(soc):
             print("Blockchain synced")
             sync = [True, 0, 0]
         chainwork = int(payload[:64], 16)
@@ -219,7 +219,7 @@ def handle_message(soc, message):
                 send_message("universal",soc=soc, cargo=["00", "headers"])
         else:
             logging.debug(f"{command} 3 bancheck")
-            ban_check(soc.getpeername())
+            ban_check(getpeername(soc))
     elif command == "getaddr":
         send_message("addr", soc=soc)
     elif command == "addr":
@@ -227,7 +227,7 @@ def handle_message(soc, message):
         num_addr = int(payload[:4], 16)
         if num_addr > 1000:
             logging.debug(f"{command} bancheck")
-            ban_check(soc.getpeername())
+            ban_check(getpeername(soc))
             return
         index = 4
         logging.debug(f"my addr:{my_addr}, {port}")
@@ -250,7 +250,7 @@ def handle_message(soc, message):
                 if query[2] < node_timestamp:
                     c.execute("UPDATE nodes SET timestamp = (?) WHERE addr = (?) AND port = (?);", (node_timestamp, node_ip, node_port))
             if num_addr == 1 and int(time()) - node_timestamp < 600 and (node_ip != my_addr or node_port != port) and routable(node_ip):
-                address = soc.getpeername()
+                address = getpeername(soc)
                 if query != None:
                     if query[0] == node_ip and query[1] == node_port and query[2] == node_timestamp:
                         break
@@ -274,7 +274,7 @@ def handle_message(soc, message):
         pass
     else:
         logging.debug(f"{command} bancheck")
-        ban_check(soc.getpeername())
+        ban_check(getpeername(soc))
 
 
 def send_message(command, soc = None, cargo = None):
@@ -286,7 +286,7 @@ def send_message(command, soc = None, cargo = None):
         if command == "version1":
             addr_recv = cargo
         else:
-            addr_recv = soc.getpeername()[0]
+            addr_recv = getpeername(soc)[0]
         addr_recv = encode_ip(addr_recv)
         tr_port = blockchain.fill(hex(port)[2:], 4)
         payload = bytes.fromhex(version + timestamp + best_height + addr_recv + tr_port)
@@ -317,7 +317,7 @@ def send_message(command, soc = None, cargo = None):
         outbound.put(["send", [soc, header + payload]])
     elif command == "sync":
         print("Synchronizujem zo sietou")
-        sync = [False, int(time()), soc.getpeername()]
+        sync = [False, int(time()), getpeername(soc)]
         num_headers = 0
         blockchain.c.execute("SELECT rowid FROM blockchain WHERE rowid = (SELECT MAX(rowid) FROM blockchain);")
         rowid = blockchain.c.fetchone()[0]
@@ -343,7 +343,7 @@ def send_message(command, soc = None, cargo = None):
         header = create_header("getheaders", payload_lenght)
         outbound.put(["send", [soc, header + payload]])
     elif command == "addr":
-        if cargo == "init":
+        if cargo == "init" or cargo == "broadcast":
             payload = bytes.fromhex("0001" + encode_ip(my_addr) + blockchain.fill(hex(port)[2:], 4) + hex(int(time()))[2:])
         elif cargo != None and cargo != "broadcast":
             payload = bytes.fromhex(cargo)
@@ -357,7 +357,7 @@ def send_message(command, soc = None, cargo = None):
             num_addr = 0
             payload = ""
             for node in ls_nodes:
-                peer = soc.getpeername()
+                peer = getpeername(soc)
                 if node[0] != peer[0] and node[1] != peer[1]:
                     num_addr += 1
                     payload = payload + encode_ip(node[0]) + blockchain.fill(hex(node[1])[2:], 4) + hex(node[2])[2:]
@@ -453,6 +453,19 @@ def start_mining():
     block_header, txs = blockchain.build_block()
     to_mine.put([block_header, txs])
 
+
+def getpeername(soc):
+    global nodes
+    try:
+        adr = soc.getpeername()
+        return adr
+    except:
+        for i in list(nodes.keys()):
+            try:
+                nodes[i].socket.getpeername()
+            except:
+                del nodes[i]
+
 def main():
     global sync, mining, con_sent, blockchain, stime, prev_time, num_time
     blockchain = Blockchain(version, send_message, sync, logging)
@@ -538,8 +551,7 @@ def main():
                     if current_time - i.lastrecv > 5400:
                         outbound.put(["close", i.address])
                     elif current_time - i.lastsend > 1800:
-                        logging.debug(f"posielam active na {soc.getpeername()}")
-                        send_message("only", soc=nodes[soc.getpeername()].socket, cargo="active")
+                        send_message("only", soc=nodes[getpeername(i.socket)].socket, cargo="active")
                 if num_time == 48:
                     send_message("addr", cargo="broadcast")
                     c.execute("SELECT MAX(rowid) FROM nodes;")
