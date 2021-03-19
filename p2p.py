@@ -35,17 +35,17 @@ def main(nodes, inbound, outbound, ban_list):
                 if not new_message:
                     sockets_list.remove(soc)
                     try:#ked je new message false mozu sa stat 2 moznosti ze je error na packete alebo som len dostal close alebo b""
-                        del nodes[soc.getpeername()]#v prvom pripade toto fungovat nebude socket vyhodi error
+                        del nodes[getpeername(soc, nodes)]#v prvom pripade toto fungovat nebude socket vyhodi error
                     except:
                         del_bad_soc(nodes)
                 else:
                     if new_message != "error":
-                        nodes[soc.getpeername()].lastrecv = int(time())
+                        nodes[getpeername(soc, nodes)].lastrecv = int(time())
                     inbound.put([soc, new_message])
 
         for exception in exception_sockets:
             sockets_list.remove(expection)
-            del nodes[exception.getpeername()]
+            del nodes[getpeername(exception, nodes)]
 
         if not outbound.empty():
             comm, body = outbound.get()
@@ -56,7 +56,7 @@ def main(nodes, inbound, outbound, ban_list):
                     new_soc.settimeout(5)
                     new_soc.connect((addr, port))
                     new_soc.settimeout(None)
-                    new_node = node((new_soc, new_soc.getpeername()), False, "version", int(time()))
+                    new_node = node((new_soc, getpeername(new_soc, nodes)), False, "version", int(time()))
                     sockets_list.append(new_node.socket)
                     nodes[new_node.address] = new_node
                     send_message(new_node.socket, vers, nodes)
@@ -67,22 +67,22 @@ def main(nodes, inbound, outbound, ban_list):
                 soc, message = body
                 suc_send = send_message(soc, message, nodes)
                 if not suc_send:
-                    outbound.put(["close", soc.getpeername()])
+                    outbound.put(["close", getpeername(soc, nodes)])
             elif comm == "broadcast":
                 skip_soc, tx = body
                 for soc in sockets_list:
-                    if soc == server_socket or soc.getpeername() == skip_soc:
+                    if soc == server_socket or getpeername(soc, nodes) == skip_soc:
                         continue
                     send_message(soc, tx, nodes)
             elif comm == "close":
                 for soc in sockets_list:
                     if soc == server_socket:
                         continue
-                    if soc.getpeername() == body:
+                    if getpeername(soc, nodes) == body:
                         send_message(soc, b"close", nodes)
                         sockets_list.remove(soc)
                         try:
-                            del nodes[soc.getpeername()]
+                            del nodes[getpeername(soc, nodes)]
                         except:
                             del_bad_soc(nodes)
                         soc.close()
@@ -104,7 +104,7 @@ def send_message(soc, message, nodes):
                 return False
             totalsent = totalsent + sent
         try:
-            nodes[soc.getpeername()].lastsend = int(time())
+            nodes[getpeername(soc, nodes)].lastsend = int(time())
         except:
             del_bad_soc(nodes)
         return True
@@ -161,3 +161,11 @@ def del_bad_soc(nodes):
             nodes[i].socket.getpeername()
         except:
             del nodes[i]
+
+
+def getpeername(soc, nodes):
+    try:
+        adr = soc.getpeername()
+        return adr
+    except:
+        del_bad_soc(nodes)
